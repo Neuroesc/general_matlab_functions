@@ -162,7 +162,7 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
             [~,omnip,~,sts] = ttest(ds3(:,1),ds3(:,2));
             meds = accumarray(gs,ds,[],@nanmean);      
             stds = accumarray(gs,ds,[],@nanstd);  
-            sems = accumarray(gs,ds,[],@nansems);  
+            sems = accumarray(gs,ds,[],@nansem);  
             result1 = [sts.df sts.tstat omnip meds(:)'];      
             if config.display
                 disp(sprintf('\t\tPaired ttest: t(%d) = %.1f, p = %s\n\t\tgroup n: %s\n\t\tmeans: %s\n\t\tSD: %s\n\t\tSEM: %s',sts.df,sts.tstat,mat2str(omnip,3),mat2str([sum(~isnan(ds3(:,1))) sum(~isnan(ds3(:,2)))]),mat2str(meds(:)',3),mat2str(stds(:)',3),mat2str(sems(:)',3) ) )
