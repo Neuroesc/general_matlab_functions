@@ -132,8 +132,14 @@ function [shuff_info] = savelli_shuffle(pox,poy,pot,poh,spt,spindx,rmset,iti)
     
 %% >>>>>>>>>> Shuffle (shuffle spike train) 
     rng(999); % for reproducibility
+    n = numel(pot); 
+    minShift = rmset.srate*20; % exclude offsets less than 20s
+    validOffsets = [-n:-minShift, minShift:n]; % Build the allowed offset set
+    offsets = validOffsets(randi(numel(validOffsets),iti,1)); % Randomly pick one 
+
     for ii = 1:iti
-        [~,spindx2] = shift_spike_train(pot,spt,'spindx',spindx);
+        % [~,spindx2] = shift_spike_train(pot,spt,'spindx',spindx);
+        spindx2 = mod(spindx-1 + offsets(ii), n) + 1;
         spk_now = pos(spindx2,:);
 
         % bootstrapped firing rate map   
