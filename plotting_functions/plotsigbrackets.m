@@ -53,7 +53,7 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
 % 
 % %% Retrieve parameters 
 %     config = p.Results;
-    
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% ################################################################# %% INPUT ARGUMENTS CHECK
 %% Parse inputs
@@ -259,6 +259,9 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
     ydrop = bracket_y_gap ./ config.omnibus_ydrop_coeff; % how much will the caps on the ends drop vertically
     text_y_gap = bracket_y_gap ./ config.omnibus_text_y_gap_coeff;
 
+    if ngroups==2 && omnip<=.05 && config.plot_brackets
+        config.plot_omnibus = 1;
+    end
     if config.plot_omnibus % if we are going to need the omnibus bracket
         %% draw omnibus bracket
         x1 = nanmin(xvals); % the starting x coordinate
@@ -271,22 +274,26 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
         errorbar([x1 x2],[y1 y2],[ydrop ydrop],[ydrop ydrop],'Color',config.omnibus_colour,'LineWidth',config.omnibus_line_width,'CapSize',0,'Clipping','off');
 
         % add omnibus test result
-        if omnip<=.001
-            S = sprintf('{\\itp} = %0.1e',omnip);
-            S = regexprep(S, {'e[+-]0+\>', 'e\+?(-?)0*(\d+)'}, {'', '{\\times}10^{$1$2}'});
-            text_str = S;                           
+        % if omnip<=.001
+        %     S = sprintf('{\\itp} = %0.1e',omnip);
+        %     S = regexprep(S, {'e[+-]0+\>', 'e\+?(-?)0*(\d+)'}, {'', '{\\times}10^{$1$2}'});
+        %     text_str = S;                           
+        % else
+        %     text_str = cellstr(sprintf('{\\itp} = %s',strrep(num2str(omnip,'%.3f'),'0.','.')));                    
+        % end
+        if omnip<=.05
+            text_str = {'*'};
+            if omnip<=.01
+                text_str = {'**'};                    
+                if omnip<=.001
+                    text_str = {'***'};   
+                end
+            end
         else
-            text_str = cellstr(sprintf('{\\itp} = %s',strrep(num2str(omnip,'%.3f'),'0.','.')));                    
-        end
-          
+            keyboard
+        end 
 
         to = text(mean([x1 x2]),mean([y1 y2])+text_y_gap,text_str,'FontSize',config.omnibus_text_fsize,'HorizontalAl','center','VerticalAl','bottom');
     end
-
-
-
-
-
-
 
 
