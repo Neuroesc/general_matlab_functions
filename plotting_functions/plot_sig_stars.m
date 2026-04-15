@@ -132,7 +132,7 @@ function [res,mres,sts,axb,h_b,h_t,h_bo,h_to] = plot_sig_stars(ds,gs,ax,opts)
 
 % HISTORY
 %
-% version 1.0.0, Release 00/00/26 Initial release
+% version 1.0.0, Release 15/04/26 Initial release
 %
 % AUTHOR 
 % Roddy Grieves
