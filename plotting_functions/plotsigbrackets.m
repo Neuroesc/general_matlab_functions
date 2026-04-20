@@ -67,7 +67,10 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
     addParameter(inp,'test','anova',@(x) any(validatestring(x,{'anova','kw','friedman','repeatt'})));         
     addParameter(inp,'display',1,@(x) islogical(x) || isscalar(x));    
     addParameter(inp,'exactp',0,@(x) islogical(x) || isscalar(x));        
-    addParameter(inp,'test_only',0,@(x) islogical(x) || isscalar(x));    
+    addParameter(inp,'test_only',0,@(x) islogical(x) || isscalar(x));   
+    % ED added updated p-value threshold e.g in case of multiple
+    % comparisons, default is 0.05
+    addParameter(inp, 'p_th', 0.05, @(x) isnumeric(x) && ~isempty(x));
     
     % bracket settings
     addParameter(inp,'bracket_y_base',inf,@(x) isnumeric(x) && ~isempty(x));   
@@ -157,6 +160,7 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
                 end            
             end   
         case {'repeatt'}
+            
             [~,gidx] = sort(gs,'ascend');
             ds2 = ds(gidx);
             ds3 = reshape(ds2,[],ngroups);
@@ -166,19 +170,25 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
             sems = accumarray(gidxd,ds,[],@nansem);  
             result1 = [sts.df sts.tstat omnip meds(:)'];      
             if config.display
-                disp(sprintf('\t\tPaired ttest: t(%d) = %.1f, p = %s\n\t\tgroup n: %s\n\t\tmeans: %s\n\t\tSD: %s\n\t\tSEM: %s',sts.df,sts.tstat,mat2str(omnip,3),mat2str([sum(~isnan(ds3(:,1))) sum(~isnan(ds3(:,2)))]),mat2str(meds(:)',3),mat2str(stds(:)',3),mat2str(sems(:)',3) ) )
+                disp(sprintf(['\t\tPaired ttest: t(%d) = %.1f, p = %s\n\t\t' ...
+                    'group n: %s\n\t\tmeans: %s\n\t\tSD: %s\n\t\tSEM: %s'], ...
+                    sts.df,sts.tstat,mat2str(omnip,3), ...
+                    mat2str([sum(~isnan(ds3(:,1))) sum(~isnan(ds3(:,2)))]), ...
+                    mat2str(meds(:)',3),mat2str(stds(:)',3),mat2str(sems(:)',3) ) )
                 if config.exactp
                     disp(omnip);
                 end            
             end              
     end        
-     
+     % keyboard
     %% If more than 2 groups, run multiple comparisons
     % Thankfully multcompare can work out and adapt to the omnibus test that
     % was run
     if ngroups>2 && omnip<=.05
         if ~isstruct(sts)
-            error('Omnibus p-value provided but no multiple comparison test results given, either provide these or disable significance brackets (set bbars to 0)');
+            error(['Omnibus p-value provided but no multiple comparison ' ...
+                'test results given, either provide these or disable ' ...
+                'significance brackets (set bbars to 0)']);
         end
         [c,m,h,~] = multcompare(sts,'display','off','ctype','dunn-sidak');
         pindx = c(:,end);
@@ -260,7 +270,7 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
     ydrop = bracket_y_gap ./ config.omnibus_ydrop_coeff; % how much will the caps on the ends drop vertically
     text_y_gap = bracket_y_gap ./ config.omnibus_text_y_gap_coeff;
 
-    if ngroups==2 && omnip<=.05 && config.plot_brackets
+    if ngroups==2 && omnip<= config.p_th && config.plot_brackets
         config.plot_omnibus = 1;
     end
     if config.plot_omnibus % if we are going to need the omnibus bracket
@@ -282,7 +292,10 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
         % else
         %     text_str = cellstr(sprintf('{\\itp} = %s',strrep(num2str(omnip,'%.3f'),'0.','.')));                    
         % end
-        if omnip<=.05
+        
+        if omnip<= config.p_th
+            % ED note: unsure how to adjust the stars when p-threshold is
+            % adjusted..
             text_str = {'*'};
             if omnip<=.01
                 text_str = {'**'};                    
