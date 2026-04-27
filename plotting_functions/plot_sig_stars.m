@@ -45,6 +45,11 @@ function [res,mres,sts,axb,h_b,h_t,h_bo,h_to] = plot_sig_stars(ds,gs,ax,opts)
 %       to have vertical 'whiskers' or caps at the ends, this is purely visual.
 %       Default value is false.
 %
+% 'force_omnibus' - Logical scalar, set to true if you want the omnibus test
+%       to be shown even if the test result is not significant (in this case the
+%       p-value will be displayed as n.s.)
+%       Default value is false.
+%
 % 'spacing_coef' - Numeric scalar, controls the vertical spacing between
 %       significance brackets. A larger number means larger spacing and
 %       corresponds to a percentage of the vertical distance spanned by the
@@ -152,6 +157,7 @@ function [res,mres,sts,axb,h_b,h_t,h_bo,h_to] = plot_sig_stars(ds,gs,ax,opts)
         opts.display logical = true
         opts.multcomp logical = true
         opts.whiskers logical = false
+        opts.force_omnibus logical = false
 
         opts.spacing_coef {mustBeNumeric} = 2 % spacing between brackets, higher means more spacing
         opts.horizon_coef {mustBeNumeric} = 0 % spacing between bottom bracket and top of axis, higher means more spacing
@@ -217,6 +223,8 @@ function [res,mres,sts,axb,h_b,h_t,h_bo,h_to] = plot_sig_stars(ds,gs,ax,opts)
     % post-hoc tests, but the groups differ, so we should plot a bracket    
     print_omni = false;
     if ngroups==2 && res{4}<=.05 
+        print_omni = true;
+    elseif opts.force_omnibus
         print_omni = true;
     end
 
@@ -294,6 +302,9 @@ function [res,mres,sts,axb,h_b,h_t,h_bo,h_to] = plot_sig_stars(ds,gs,ax,opts)
             h_to = text(axb,text_x,text_y+tshift,tomni,'VerticalAlignment','bottom','HorizontalAlignment','center','Clipping','off','FontSize',opts.font_size,'Interpreter','tex','Color',opts.text_color);
         end
     end
+    
+    axes(ax); % return original axis as current
+
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% OMNIBUS STATS FUNCTION
