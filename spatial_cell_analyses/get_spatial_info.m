@@ -19,37 +19,17 @@ function m = get_spatial_info(dmap,rmap,opts)
 % 'rmap' - MxN numeric matrix, required, firing rate map
 %       units are in Hz (spikes per second).
 %
-% Optional inputs:
-%
-% 'all' - Numeric or logical, set to 1 to compute all spatial information
-%       metrics
-%       default is 1
-%
-% 'spatial_info' - Numeric or logical, set to 1 to compute Skaggs spatial
-%       information content, both bits per second and bits per spike
-%       default is 0
-%
-% 'sparsity' - Numeric or logical, set to 1 to compute Skaggs sparsity measure
-%       default is 0
-%
-% 'mutual_info' - Numeric or logical, set to 1 to compute Mutual Information
-%       default is 0
-%
-% 'entropy' - Numeric or logical, set to 1 to compute Shannon's entropy and
-%       Cross entropy
-%       default is 0
-%
-% 'kld' - Numeric or logical, set to 1 to compute Kullback–Leibler divergence,
-%       symmetric Kullback–Leibler divergence and Jensen-Shannon divergence
-%       default is 0
-%
-% 'spatial_coherence' - Numeric or logical, set to 1 to compute Cacucci et al.'s 
-%       (2007) spatial coherence measure
-%       default is 0
-%
-% 'signal_to_noise' - Numeric or logical, set to 1 to compute signal to noise
-%       ratio (max / mean)
-%       default is 0
+% 'metrics' - Cell array of strings, optional
+%       Choices include: 
+%           {'all'} - compute all spatial metrics
+%           {'spatial_info'} - compute Skaggs spatial information content, both bits per second and bits per spike
+%           {'sparsity'} - Skaggs sparsity measure
+%           {'mutual_info'} - Mutual Information
+%           {'entropy'} - Shannon's entropy and Cross entropy
+%           {'kld'} - Kullback–Leibler divergence, symmetric Kullback–Leibler divergence and Jensen-Shannon divergence
+%           {'spatial_coherence'} - Cacucci et al.'s (2007) spatial coherence measure
+%           {'signal_to_noise'} - Signal to noise ratio (max / mean)
+%       default is {'all'}
 %
 % OUTPUT
 %
@@ -89,7 +69,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % dmap = (dmap / sum(dmap(:))) * 600;
 % 
 % % get the spatial metrics
-% m = get_spatial_info(dmap,rmap,'all',1);
+% m = get_spatial_info(dmap,rmap,'metrics',{'all'});
 % 
 % % plot results
 % figure; tiledlayout; nexttile;
@@ -106,7 +86,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % rmap = (rmap / max(rmap(:))) * 15;
 % 
 % % get the spatial metrics
-% m = get_spatial_info(dmap,rmap,'all',1);
+% m = get_spatial_info(dmap,rmap,'metrics',{'spatial_info','sparsity'});
 % 
 % % plot results
 % nexttile;
@@ -125,6 +105,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 %
 % version 1.0.0, Release 08/05/26 Initial release, adapted from spatialMETRICS
 % version 1.0.1, Release 08/05/26 Cleaned up comments, inputs, code layout
+% version 1.1.0, Release 08/05/26 Greatly improved choice of spatial metrics
 %
 % AUTHOR 
 % Roddy Grieves
@@ -138,14 +119,16 @@ function m = get_spatial_info(dmap,rmap,opts)
     arguments
         dmap
         rmap
-        opts.spatial_info {mustBeNumeric} = 0
-        opts.sparsity {mustBeNumeric} = 0
-        opts.mutual_info {mustBeNumeric} = 0
-        opts.entropy {mustBeNumeric} = 0
-        opts.kld {mustBeNumeric} = 0
-        opts.spatial_coherence {mustBeNumeric} = 0
-        opts.snr {mustBeNumeric} = 0
-        opts.all {mustBeNumeric} = 1
+        opts.metrics (1,:) string {mustBeMember(opts.metrics, ["all", "spatial_info", "sparsity", "mutual_info", "entropy", "kld", "spatial_coherence", "snr"])} = ["all"]
+
+        % opts.spatial_info {mustBeNumeric} = 0
+        % opts.sparsity {mustBeNumeric} = 0
+        % opts.mutual_info {mustBeNumeric} = 0
+        % opts.entropy {mustBeNumeric} = 0
+        % opts.kld {mustBeNumeric} = 0
+        % opts.spatial_coherence {mustBeNumeric} = 0
+        % opts.snr {mustBeNumeric} = 0
+        % opts.all {mustBeNumeric} = 1
     end
     m = struct;
 
@@ -170,7 +153,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % https://onlinelibrary.wiley.com/doi/epdf/10.1002/%28SICI%291098-1063%281996%296%3A2%3C149%3A%3AAID-HIPO6%3E3.0.CO%3B2-K
 % Markus et al. (1994) Spatial information content and reliability of hippocampal CA1 neurons: effects of visual input
 % https://onlinelibrary.wiley.com/doi/epdf/10.1002/hipo.450040404
-    if opts.spatial_info || opts.all
+    if ismember("spatial_info",opts.metrics) || ismember("all",opts.metrics)
         pi = dmap ./ sum(dmap,'all','omitmissing'); % dwell time probability
         ro = sum(rmap(:) .* pi(:),'all','omitmissing'); % overall firing rate
         s = sum(pi(:) .* (rmap(:)./ro) .* log2(rmap(:)./ro),'all','omitmissing');
@@ -184,7 +167,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % then a different kind of information rate is obtained, in units of bits per spike|let us
 % call it the information per spike. This is a measure of the specificity of the cell: the
 % more grandmotherish" the cell, the more information per spike. 
-    if opts.spatial_info || opts.all
+    if ismember("spatial_info",opts.metrics) || ismember("all",opts.metrics)
         m.skaggs_si_bits_per_spike = s ./ ro;
     end
 
@@ -193,7 +176,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % The sparsity measure is  an adaptation  to space of  a formula invented by Treves and Rolls (1 99 1); the adaptation measures the 
 % fraction of the environment  in which a cell  is active. Intuitively, a sparsity of, say, 0.1 means that the place field of the cell 
 % occupies 1/10 of the area the rat traverses.
-    if opts.sparsity || opts.all
+    if ismember("sparsity",opts.metrics) || ismember("all",opts.metrics)
         m.sparsity = ( sum(pi(:).*rmap(:),'all','omitmissing').^2 ) ./ ( sum(pi(:).*(rmap(:).^2),'all','omitmissing') );
     end
 
@@ -205,7 +188,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % mutual information is the same as the uncertainty contained in Y (or X) alone, namely the entropy of Y (or X). Moreover, this mutual 
 % information is the same as the entropy of X and as the entropy of Y. (A very special case of this is when X and Y are the same random variable.)
 % https://en.wikipedia.org/wiki/Mutual_information
-    if opts.mutual_info || opts.all
+    if ismember("mutual_info",opts.metrics) || ismember("all",opts.metrics)
         m.mutual_info =  MutualInformation(rmap8(:),dmap8(:));
     end
 
@@ -215,7 +198,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % intensity image.  Entropy is a statistical measure of randomness that can be
 % used to characterize the texture of the input image.  Entropy is defined as
 % -sum(p.*log2(p)) where p contains the histogram counts returned from IMHIST.
-    if opts.entropy || opts.all
+    if ismember("entropy",opts.metrics) || ismember("all",opts.metrics)
         m.shannon_entropy = -sum(p.*log2(p));
     end
 
@@ -223,7 +206,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % In information theory, the cross entropy between two probability distributions {\displaystyle p} p and {\displaystyle q} q over the same underlying 
 % set of events measures the average number of bits needed to identify an event drawn from the set, if a coding scheme is used that is optimized for 
 % an "unnatural" probability distribution {\displaystyle q} q, rather than the "true" distribution {\displaystyle p} p.
-    if opts.entropy || opts.all
+    if ismember("entropy",opts.metrics) || ismember("all",opts.metrics)
         ce0 = p .* log2(q); % using log base 2 means the output is measured in bits
         m.cross_entropy = -sum(ce0,'all','omitmissing');
     end
@@ -234,13 +217,13 @@ function m = get_spatial_info(dmap,rmap,opts)
 % behavior of two different distributions, while a Kullback–Leibler divergence of 1 indicates that the two distributions behave in such a different 
 % manner that the expectation given the first distribution approaches zero. In simplified terms, it is a measure of surprise.
 % https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence
-    if opts.kld || opts.all
+    if ismember("kld",opts.metrics) || ismember("all",opts.metrics)
         m.kldivergence = sum(p .* (log2(p) - log2(q)));
     end
 
 %%%%%%%%%%%%%%%% Symmetric Kullback–Leibler divergence
 % This quantity has sometimes been used for feature selection in classification problems, where P and Q are the conditional pdfs of a feature under two different classes.
-    if opts.kld || opts.all
+    if ismember("kld",opts.metrics) || ismember("all",opts.metrics)
         KL1 = sum(p .* (log2(p) - log2(q)));
         KL2 = sum(q .* (log2(q) - log2(p)));
         m.kldivergence_symmetric = (KL1 + KL2) / 2;
@@ -251,7 +234,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % It is based on the Kullback–Leibler divergence, with some notable (and useful) differences, including that it is symmetric and it is always a finite value. 
 % The square root of the Jensen–Shannon divergence is a metric often referred to as Jensen-Shannon distance.
 % https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
-    if opts.kld || opts.all
+    if ismember("kld",opts.metrics) || ismember("all",opts.metrics)
         logQvect = log2((q + p) / 2);
         jsd = 0.5 * (sum(p .* (log2(p) - logQvect)) + sum(q .* (log2(q) - logQvect)));
         m.jsdivergence = sqrt(jsd);
@@ -262,7 +245,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % https://dx.doi.org/10.1523%2FJNEUROSCI.1704-07.2007
 % The spatial coherence for each firing rate map was computed as the mean correlation between the firing rate of each bin with the 
 % aggregate rate of the 24 nearest bins.
-    if opts.spatial_coherence || opts.all
+    if ismember("spatial_coherence",opts.metrics) || ismember("all",opts.metrics)
         meanf = ones([5 5]);
         meanf(3,3) = 0;
         U = imfilter(rmap,meanf,'replicate');
@@ -276,33 +259,9 @@ function m = get_spatial_info(dmap,rmap,opts)
 % there is  in principle  no upper  limit. A similar measure was  used by Barnes et al. (1983), except that the "out-of-field" firing rate was 
 % used instead of the mean rate. The present definition is prefer- able because it does  not depend  on identifying  a  "place field," and because 
 % it is much less sensitive to noise. 
-    if opts.snr || opts.all
+    if ismember("snr",opts.metrics) || ismember("all",opts.metrics)
         m.signal_to_noise = max(rmap,[],"all",'omitmissing') ./ mean(rmap,'all','omitmissing');
     end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 end
 
