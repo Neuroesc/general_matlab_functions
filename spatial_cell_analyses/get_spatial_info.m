@@ -56,48 +56,48 @@ function m = get_spatial_info(dmap,rmap,opts)
 %
 % EXAMPLE
 %
-% % synthetic ratemap and dwellmap
-% mapSize = 100;
-% numFields = 2;
-% sigma = 8;
-% rmap = zeros(mapSize);
-% rmap( randperm(mapSize * mapSize, numFields) ) = 1;
-% rmap = imgaussfilt(rmap,sigma,'FilterSize',2*ceil(4*sigma)+1,'Padding',0);
-% rmap = (rmap / max(rmap(:))) * 15;
-% dmap = rand(mapSize);
-% dmap = imgaussfilt(dmap, 4);
-% dmap = (dmap / sum(dmap(:))) * 600;
+%   % synthetic ratemap and dwellmap
+%   mapSize = 100;
+%   numFields = 2;
+%   sigma = 8;
+%   rmap = zeros(mapSize);
+%   rmap( randperm(mapSize * mapSize, numFields) ) = 1;
+%   rmap = imgaussfilt(rmap,sigma,'FilterSize',2*ceil(4*sigma)+1,'Padding',0);
+%   rmap = (rmap / max(rmap(:))) * 15;
+%   dmap = rand(mapSize);
+%   dmap = imgaussfilt(dmap, 4);
+%   dmap = (dmap / sum(dmap(:))) * 600;
 % 
-% % get the spatial metrics
-% m = get_spatial_info(dmap,rmap,'metrics',{'all'});
+%   % get the spatial metrics
+%   m = get_spatial_info(dmap,rmap,'metrics',{'all'});
 % 
-% % plot results
-% figure; tiledlayout; nexttile;
-% imagesc(rmap); 
-% title(sprintf('Ratemap\nSpatial info: %.2fb/s',m.skaggs_si_bits_per_sec),'FontWeight','normal'); 
-% axis image; colorbar;
+%   % plot results
+%   figure; tiledlayout; nexttile;
+%   imagesc(rmap); 
+%   title(sprintf('Ratemap\nSpatial info: %.2fb/s',m.skaggs_si_bits_per_sec),'FontWeight','normal'); 
+%   axis image; colorbar;
 % 
-% % synthetic ratemap and dwellmap
-% numFields = 8;
-% sigma = 16;
-% rmap = zeros(mapSize);
-% rmap( randperm(mapSize * mapSize, numFields) ) = 1;
-% rmap = imgaussfilt(rmap,sigma,'FilterSize',2*ceil(4*sigma)+1,'Padding',0);
-% rmap = (rmap / max(rmap(:))) * 15;
+%   % synthetic ratemap and dwellmap
+%   numFields = 8;
+%   sigma = 16;
+%   rmap = zeros(mapSize);
+%   rmap( randperm(mapSize * mapSize, numFields) ) = 1;
+%   rmap = imgaussfilt(rmap,sigma,'FilterSize',2*ceil(4*sigma)+1,'Padding',0);
+%   rmap = (rmap / max(rmap(:))) * 15;
 % 
-% % get the spatial metrics
-% m = get_spatial_info(dmap,rmap,'metrics',{'spatial_info','sparsity'});
+%   % get the spatial metrics
+%   m = get_spatial_info(dmap,rmap,'metrics',{'spatial_info','sparsity'});
 % 
-% % plot results
-% nexttile;
-% imagesc(rmap); 
-% title(sprintf('Ratemap\nSpatial info: %.2fb/s',m.skaggs_si_bits_per_sec),'FontWeight','normal'); 
-% axis image; colorbar;
+%   % plot results
+%   nexttile;
+%   imagesc(rmap); 
+%   title(sprintf('Ratemap\nSpatial info: %.2fb/s',m.skaggs_si_bits_per_sec),'FontWeight','normal'); 
+%   axis image; colorbar;
 % 
-% nexttile
-% imagesc(dmap); 
-% axis image; colorbar;
-% title(sprintf('Dwellmap'),'FontWeight','normal'); 
+%   nexttile
+%   imagesc(dmap); 
+%   axis image; colorbar;
+%   title(sprintf('Dwellmap'),'FontWeight','normal'); 
 % 
 % SEE ALSO 
 
@@ -120,15 +120,6 @@ function m = get_spatial_info(dmap,rmap,opts)
         dmap
         rmap
         opts.metrics (1,:) string {mustBeMember(opts.metrics, ["all", "spatial_info", "sparsity", "mutual_info", "entropy", "kld", "spatial_coherence", "snr"])} = ["all"]
-
-        % opts.spatial_info {mustBeNumeric} = 0
-        % opts.sparsity {mustBeNumeric} = 0
-        % opts.mutual_info {mustBeNumeric} = 0
-        % opts.entropy {mustBeNumeric} = 0
-        % opts.kld {mustBeNumeric} = 0
-        % opts.spatial_coherence {mustBeNumeric} = 0
-        % opts.snr {mustBeNumeric} = 0
-        % opts.all {mustBeNumeric} = 1
     end
     m = struct;
 
