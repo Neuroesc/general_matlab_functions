@@ -5,6 +5,8 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
 % It uses bootstrapping (spike resampling with replacement) to determine stable 
 % observed values, and temporal shuffling (circular time shifts) to generate 
 % a null distribution. It outputs both parametric and non-parametric significance.
+% This is based on the Method described by Savelli et al. (2017), 
+% https://elifesciences.org/articles/21354, with some improvements.
 %
 % USAGE
 %
