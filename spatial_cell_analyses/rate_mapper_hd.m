@@ -16,6 +16,7 @@ function [ratemap,dwellmap,spikemap,xi,rmset,speedlift] = rate_mapper_hd(pos,spk
 %       units are in radians!
 %
 % 'rmset' - Struct, optional, additional settings, which can include:
+%       rmset.hd_type = String, type of map to make, can be 'histogram' or 'density' (for KSDE)
 %       rmset.hd_bins = Scalar, number of bins to use when binning data, default is 60
 %       rmset.srate = Scalar, sampling rate of the position data, in Hz, default is 50
 %       rmset.hd_sigma = Scalar, for density method, smoothing strength, default is 0.04

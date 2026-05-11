@@ -98,6 +98,20 @@ function m = get_spatial_info(dmap,rmap,opts)
 %   imagesc(dmap); 
 %   axis image; colorbar;
 %   title(sprintf('Dwellmap'),'FontWeight','normal'); 
+%
+%   % OR using get_synth_neurons
+%   figure
+%   tiledlayout
+%   N = 10;
+%   [trajectory,cells] = get_synth_neurons(N,0,0,"hpc_widths",[2 40]);
+%   for ii = 1:N
+%       [rmap,dmap] = rate_mapper([trajectory.x(:) trajectory.y(:)].*10,[cells.PC(ii).x(:) cells.PC(ii).y(:)].*10);
+%       m = get_spatial_info(dmap,rmap);
+%       nexttile
+%       imagesc(rmap)
+%       daspect([1 1 1])
+%       title(sprintf('Place Cell %d\nSpatial info: %.2fb/s',ii,m.skaggs_si_bits_per_sec),'FontWeight','normal'); 
+%   end
 % 
 % SEE ALSO 
 

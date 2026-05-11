@@ -69,14 +69,17 @@ function h = get_directional_info(rmap,xi,opts)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% FUNCTION BODY
 %%%%%%%%%%%%%%%% Circular statistics
     if ismember("rayleigh",opts.metrics) || ismember("all",opts.metrics)          
-        h.rv = circ_r(xi,rmap); % rayleigh vector length
+        h.rayleigh_v = circ_r(xi,rmap); % rayleigh vector length
     end
 
 %%%%%%%%%%%%%%%% Stats
     if ismember("stats",opts.metrics) || ismember("all",opts.metrics)          
-        h.pfd = rad2deg( xi(hd3n == max(rmap)) ); % preferred angle (location of max frate)
-        h.mean = rad2deg( circ_mean(xi,rmap) ); % mean angle
-        h.stdev = rad2deg( circ_std(xi,rmap) ); % std deviation angle
+        h.pfd = rad2deg( xi(rmap == max(rmap,[],"all",'omitmissing')) ); % preferred angle (location of max frate)
+        if numel(h.pfd)>1
+            h.hd_pfd = h.pfd(randi(numel(h.pfd)));
+        end
+        h.hd_mean = rad2deg( circ_mean(xi,rmap) ); % mean angle
+        h.hd_stdev = rad2deg( circ_std(xi,rmap) ); % std deviation angle
     end
 
 end
