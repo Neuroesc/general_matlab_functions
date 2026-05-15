@@ -75,7 +75,7 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
     % bracket settings
     addParameter(inp,'bracket_y_base',inf,@(x) isnumeric(x) && ~isempty(x));   
     addParameter(inp,'bracket_y_gap_coeff',15,@(x) isnumeric(x) && ~isempty(x)); % brackets are separated by range(axis Y limits)/bracket_y_gap_coeff
-    addParameter(inp,'bracket_text_y_gap_coeff',18,@(x) isnumeric(x) && ~isempty(x)); % text is separated from brackets by bracket_y_gap/text_y_gap_coeff
+    addParameter(inp,'bracket_text_y_gap_coeff',-1,@(x) isnumeric(x) && ~isempty(x)); % text is separated from brackets by bracket_y_gap/text_y_gap_coeff
     addParameter(inp,'bracket_colour','k',@(x) ischar(x) || isnumeric(x));   
     addParameter(inp,'bracket_line_width',1,@(x) isnumeric(x));   
     addParameter(inp,'bracket_text_fsize',10,@(x) isnumeric(x));   
@@ -180,7 +180,7 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
                 end            
             end              
     end        
-
+     % keyboard
     %% If more than 2 groups, run multiple comparisons
     % Thankfully multcompare can work out and adapt to the omnibus test that
     % was run
@@ -219,17 +219,12 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
     end
     
 %% ##################################### Add pairwise brackets
-    if isinf(config.bracket_y_base) % inf is the default setting, which 
-        % means we will use the axis y limit
-        % bracket_y_base = config.ax.YLim(2) + 0.08.*range(config.ax.YLim);
-        %% ED changed this to use max of plotted data instead
-        bracket_y_base = max(ds2)+ 0.08.*range([config.ax.YLim(1),max(ds2)]);
+    if isinf(config.bracket_y_base) % inf is the default setting, which means we will use the axis y limit
+        bracket_y_base = config.ax.YLim(2) + 0.08.*range(config.ax.YLim);
     else
         bracket_y_base = config.bracket_y_base; % user value
     end
-    % bracket_y_gap = range(config.ax.YLim) ./ config.bracket_y_gap_coeff;
-    bracket_y_gap = range([config.ax.YLim(1),max(ds2)]) ./ config.bracket_y_gap_coeff;
-    %% ED changed this too to be about max data and not axis lim
+    bracket_y_gap = range(config.ax.YLim) ./ config.bracket_y_gap_coeff;
     text_y_gap = bracket_y_gap ./ config.bracket_text_y_gap_coeff;
     
     xvals = sort(unique(gs));
@@ -247,15 +242,7 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
                 y2 = ylevel_now; % the ending y coordinate
         
                 hold on;
-                plot([x1 x2],[y1 y2],'Color',config.bracket_colour, ...
-                    'LineWidth',config.bracket_line_width, ...
-                    'Clipping','off');
-
-                ydrop = bracket_y_gap ./ config.omnibus_ydrop_coeff; % how much will
-
-                errorbar([x1 x2],[y1 y2],[ydrop ydrop],[ydrop ydrop], ...
-            'Color',config.omnibus_colour,'LineWidth', ...
-            config.omnibus_line_width,'CapSize',0,'Clipping','off');
+                plot([x1 x2],[y1 y2],'Color',config.bracket_colour,'LineWidth',config.bracket_line_width,'Clipping','off');
         
                 %% add pairwise test result
                 text_str = sprintf('%s',strrep(num2str(omnip,'%.3f'),'0.','.'));
@@ -269,10 +256,7 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
                     end
                 end
                 if config.bracket_text_fsize>0
-                    
-                    text(mean([x1 x2]),mean([y1 y2])+text_y_gap, ...
-                        text_str,'FontSize',config.bracket_text_fsize, ...
-                        'HorizontalAl','center','VerticalAl','bottom')
+                    text(mean([x1 x2]),mean([y1 y2])+text_y_gap,text_str,'FontSize',config.bracket_text_fsize,'HorizontalAl','center','VerticalAl','bottom')
                 end
         
                 %% increment future bracket y-level
@@ -283,8 +267,7 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
     end
 
 %% ##################################### Add omnibus bracket
-    ydrop = bracket_y_gap ./ config.omnibus_ydrop_coeff; % how much will
-    %  the caps on the ends drop vertically
+    ydrop = bracket_y_gap ./ config.omnibus_ydrop_coeff; % how much will the caps on the ends drop vertically
     text_y_gap = bracket_y_gap ./ config.omnibus_text_y_gap_coeff;
 
     if ngroups==2 && omnip<= config.p_th && config.plot_brackets
@@ -299,9 +282,7 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
         y2 = ylevel_now; % the ending y coordinate
 
         hold on;
-        errorbar([x1 x2],[y1 y2],[ydrop ydrop],[ydrop ydrop], ...
-            'Color',config.omnibus_colour,'LineWidth', ...
-            config.omnibus_line_width,'CapSize',0,'Clipping','off');
+        errorbar([x1 x2],[y1 y2],[ydrop ydrop],[ydrop ydrop],'Color',config.omnibus_colour,'LineWidth',config.omnibus_line_width,'CapSize',0,'Clipping','off');
 
         % add omnibus test result
         % if omnip<=.001
