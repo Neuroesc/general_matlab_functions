@@ -132,13 +132,6 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
                 end
             end                
         case {'kw'}
-            
-            % ED added this so it would be like the other tests
-            [~,gidx] = sort(gs,'ascend');
-            % This seems to be just like an ordered version of the ds
-            % but ds is already ordered so it's just the same
-            ds2 = ds(gidx);
-
             [omnip,a,sts] = kruskalwallis(ds,gs,'off');
             meds = accumarray(gidxd,ds,[],@nanmedian);
             stds = accumarray(gidxd,ds,[],@(x) mad(x,1)); 
