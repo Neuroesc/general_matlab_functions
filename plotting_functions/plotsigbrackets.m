@@ -75,7 +75,7 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
     % bracket settings
     addParameter(inp,'bracket_y_base',inf,@(x) isnumeric(x) && ~isempty(x));   
     addParameter(inp,'bracket_y_gap_coeff',15,@(x) isnumeric(x) && ~isempty(x)); % brackets are separated by range(axis Y limits)/bracket_y_gap_coeff
-    addParameter(inp,'bracket_text_y_gap_coeff',2,@(x) isnumeric(x) && ~isempty(x)); % text is separated from brackets by bracket_y_gap/text_y_gap_coeff
+    addParameter(inp,'bracket_text_y_gap_coeff',18,@(x) isnumeric(x) && ~isempty(x)); % text is separated from brackets by bracket_y_gap/text_y_gap_coeff
     addParameter(inp,'bracket_colour','k',@(x) ischar(x) || isnumeric(x));   
     addParameter(inp,'bracket_line_width',1,@(x) isnumeric(x));   
     addParameter(inp,'bracket_text_fsize',10,@(x) isnumeric(x));   
@@ -270,14 +270,9 @@ function [result1,result2,to] = plotsigbrackets(ds,gs,varargin)
                 end
                 if config.bracket_text_fsize>0
                     
-                    % text_y_gap = 0;
-                    % text(mean([x1 x2]),mean([y1 y2])+text_y_gap, ...
-                    %     text_str,'FontSize',config.bracket_text_fsize, ...
-                    %     'HorizontalAl','center','VerticalAl','bottom')
-                    %% ED changed this to make star closer to bar
                     text(mean([x1 x2]),mean([y1 y2])+text_y_gap, ...
-                    text_str,'FontSize',config.bracket_text_fsize, ...
-                    'HorizontalAl','center','VerticalAl','middle')
+                        text_str,'FontSize',config.bracket_text_fsize, ...
+                        'HorizontalAl','center','VerticalAl','bottom')
                 end
         
                 %% increment future bracket y-level
