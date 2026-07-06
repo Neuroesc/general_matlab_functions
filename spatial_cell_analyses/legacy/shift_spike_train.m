@@ -88,7 +88,7 @@ function [spt2,spindx2] = shift_spike_train(pot,spt,varargin)
     addParameter(p,'spindx',NaN,@(x) ~isempty(x) && ~all(isnan(x(:))) )
     addParameter(p,'minadd',100,@(x) isnumeric(x) && isscalar(x)); 
     addParameter(p,'maxadd',numel(pot)-100,@(x) isnumeric(x) && isscalar(x));     
-    parse(p,pot,spt,varargin{:});
+    parse(p,'pot','spt',varargin{:});
     config = p.Results;
 
     % get spike index if one was not provided
