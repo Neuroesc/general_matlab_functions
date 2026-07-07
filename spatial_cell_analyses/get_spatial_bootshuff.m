@@ -61,6 +61,11 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
 %                See get_grid_score for all options.
 %                Default is 'savelli'.
 %
+% 'trial'       - (Name-Value) Mx2 array of trial start times (column 1) and end
+%                times (column 2), if this is provided, data within each trial
+%                will be shuffled independently to other trial periods
+%                Default is [pot(1), pot(end)]
+%
 % OUTPUT
 %
 % 'res'        - Table containing summary statistics for all calculated metrics.
@@ -109,6 +114,8 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
 %
 % version 1.0.0, Release 10/05/26 Initial release
 % version 1.0.1, Release 11/05/26 Working release
+% version 1.1.0, Release 07/07/26 Changed wrapping to account for periods not beginning at t=0
+% version 1.2.0, Release 07/07/26 Atika fix: added ability to shuffle within trials
 %
 % AUTHOR 
 % Roddy Grieves
@@ -129,6 +136,7 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
         opts.iti (1,2) double = [100 100]
         opts.poh {mustBeNumeric} = []
         opts.srate {mustBeNumeric} = 50
+        opts.trial {mustBeNumeric} = []
 
         % what optional shuffles do we want to conduct
         opts.scores (1,:) string {mustBeMember(opts.scores, {'all','spatial','grid','directional'})} = ['spatial']
@@ -169,15 +177,47 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
         sph = poh(opts.sindx);
     end
 
+    % trial shuffle option
+    if ~isfield(opts,'trial') || isempty(opts.trial)
+        opts.trial = [pot(1), pot(end)];
+    end
+    n_trials = size(opts.trial, 1);
+
+    % map trial start/end times to position indices (pot)
+    trial_bounds = zeros(n_trials, 3); % [Start_Idx, End_Idx, Length]
+    for k = 1:n_trials
+        % find position indices that fall within this trial window
+        idx_in_trial = find(pot >= opts.trial(k, 1) & pot <= opts.trial(k, 2));
+        
+        if ~isempty(idx_in_trial)
+            trial_bounds(k, 1) = idx_in_trial(1);     % A_k (Start index)
+            trial_bounds(k, 2) = idx_in_trial(end);   % B_k (End index)
+            trial_bounds(k, 3) = numel(idx_in_trial); % L_k (Length in samples)
+        end
+    end
+    valid_trials = trial_bounds(:, 3) > 0;
+    trial_bounds = trial_bounds(valid_trials, :);
+    n_trials = size(trial_bounds, 1);
+
     % preallocate
     speedlift = [];
     hd_speedlift = [];
 
     % precalculate shuffles
+    offsets_matrix = zeros(n_trials, opts.iti(2));
+    for k = 1:n_trials
+        L_k = trial_bounds(k, 3);
+        validOffsets = [-(L_k-1):-round(L_k/4), round(L_k/4):(L_k-1)]';
+        
+        % fallback if validOffsets is empty (for extremely short/empty trials)
+        if isempty(validOffsets)
+            validOffsets = 0;
+        end
+        
+        % Draw random offsets for this specific trial across all shuffle iterations
+        offsets_matrix(k, :) = validOffsets(randi(numel(validOffsets), opts.iti(2), 1));
+    end
     n = numel(pot); 
-    minShift = opts.srate*20; % exclude offsets less than 20s
-    validOffsets = [-n:-minShift, minShift:n]; % Build the allowed offset set
-    offsets = validOffsets(randi(numel(validOffsets),opts.iti(2),1)); % Randomly pick one
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% FUNCTION BODY
 %%%%%%%%%%%%%%%% Bootstrap and shuffle
@@ -205,7 +245,8 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
 % resampling and shuffling differ only in the way the spikes are treated in each
 % iteration. We will collect the data in dat and then calculate the result at
 % the end.
-
+% figure
+% tiledlayout('flow')
     rng(999); % for reproducibility
     dat = table;
     for ii = 1:2
@@ -214,8 +255,29 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
                 idx = randi(length(opts.sindx),[length(opts.sindx),1]); % new spike index
                 spk_now = spk(idx,:); % new spike x,y values
             elseif ii==2 % Shuffle (shuffle spike train) 
-                sindx2 = mod(opts.sindx-1 + offsets(jj), n) + 1; % circularly offset spike index
-                spk_now = pos(sindx2,:);
+                sindx2 = zeros(size(opts.sindx)); % Pre-allocate shifted indices
+                
+                for k = 1:n_trials
+                    A_k = trial_bounds(k, 1);
+                    B_k = trial_bounds(k, 2);
+                    L_k = trial_bounds(k, 3);
+                    offset_now = offsets_matrix(k, jj);
+                    
+                    % find all spikes whose original position index falls inside this trial
+                    spk_mask = (opts.sindx >= A_k & opts.sindx <= B_k);
+                    
+                    if ~any(spk_mask)
+                        continue % Cell didn't fire during this trial, skip
+                    end
+                    
+                    % apply interval-shifted modulo arithmetic
+                    % s_new = A + mod(s - A + offset, L)
+                    sindx2(spk_mask) = A_k + mod(opts.sindx(spk_mask) - A_k + offset_now, L_k);
+                end
+                
+                % Only keep spikes that successfully landed within a valid trial block
+                valid_spikes = (sindx2 > 0);
+                spk_now = pos(sindx2(valid_spikes), :);
             end
     
             if any( ismember(opts.scores,{'spatial','grid'}) )
@@ -250,6 +312,19 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
             g_t = array2table(g,"VariableNames",{'grid_score'});
             h_t = struct2table(h, 'AsArray', true);
             dat = [dat; i_t m_t, g_t, h_t];
+
+% if ii==2
+%     if jj<30
+% nexttile
+% imagesc(rmap_now,'AlphaData',~isnan(rmap_now));
+% daspect([1 1 1])
+% colormap('turbo')
+%     else
+%         keyboard
+%     end
+% end
+
+
         end
     end  
 
@@ -292,7 +367,8 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
     res = table(bootMean', bootMedian', bootCI_low', bootCI_hi',zScores', pValues_Right', shuf95th', pValues_Left', shuf5th',...
                          'VariableNames', {'Boot_mean', 'Boot_median', 'Boot_CI_lower','Boot_CI_upper', 'z_score', 'p_value(right)', 'shuffle_95th_prctile','p_value(left)', 'shuffle_5th_prctile'}, ...
                          'RowNames', metricNames);
-
+    % dat.offset = zeros(size(dat,1),1);
+    % dat.offset(isShuf) = offsets(:);
 
 
 
