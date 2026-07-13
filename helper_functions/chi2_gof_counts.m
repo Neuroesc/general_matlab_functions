@@ -1,7 +1,7 @@
 function [p, x, e] = chi2_gof_counts(N1, N2, options)
 % chi2_gof_counts Chi-Square goodness-of-fit test for two categories
 %
-% Performs a Chi-Square Goodness-of-Fit test on summarized count data 
+% Performs a two-sided Chi-Square Goodness-of-Fit test on summarized count data 
 % (e.g., N of neuron 1 and N of neuron 2) to determine if the observed proportions 
 % significantly differ from an expected null distribution (default 50/50).
 %
@@ -23,14 +23,14 @@ function [p, x, e] = chi2_gof_counts(N1, N2, options)
 %
 % 'p1' - (Optional Name-Value) Scalar, numeric value between 0 and 1.
 %       Specifies the expected probability (chance rate) of an observation 
-%       belonging to category 1 under the null hypothesis. 
+%       belonging to category 1 under the null hypothesis.
 %       Default value is 0.5.
 %
 % OUTPUT
 %
 % 'p' - Scalar numeric value between 0 and 1.
 %       Represents the probability of observing this large of a difference 
-%       purely by chance (the p-value).
+%       purely by chance (the p-value). Two-sided.
 %
 % 'x' - Scalar numeric value.
 %       The calculated Chi-Square test statistic.
