@@ -102,24 +102,20 @@ function [spt2,spindx2] = shift_spike_train(pot,spt,varargin)
     config.spindx = double(config.spindx);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% FUNCTION BODY
+    L_k = numel(pot);
+    validOffsets = [-(config.maxadd-1):-config.minadd, config.minadd:(config.maxadd-1)]';
+    
+    % fallback if validOffsets is empty (for extremely short/empty trials)
+    if isempty(validOffsets)
+        validOffsets = 0;
+    end
 
+    offset_now = randi(numel(validOffsets), opts.iti(2), 1);
 
-    spike_diff = pot(config.spindx)-spt; % difference between each spike and its nearest position time neighbour
-
-    shift_amount = randi([config.minadd,config.maxadd],1) .* (2*(rand(1)>.5)-1);
-
-    spindx2 = config.spindx + shift_amount;
-    max_idx = numel(pot);
-    spindx2(spindx2<1) = spindx2(spindx2<1)+max_idx;
-    spindx2(spindx2>max_idx) = spindx2(spindx2>max_idx)-max_idx;
-
+    % apply interval-shifted modulo arithmetic
+    % s_new = A + mod(s - A + offset, L)
+    spindx2 = A_k + mod(opts.spindx - 1 + offset_now, L_k);
     spt2 = pot(spindx2)-spike_diff;
-
-
-
-
-
-
 
 
 

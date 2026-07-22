@@ -54,6 +54,49 @@ function m = get_spatial_info(dmap,rmap,opts)
 % use a greyscale version of binned values, you can see this operation at the
 % top of the code
 %
+% 3. Validation of Skaggs spatial information content
+% From Skaggs et al. (1992) An Information-Theoretic Approach to Deciphering the
+% Hippocampal Code:
+% "To get the basic idea, imagine we are recording the activity of a neuron in the brain
+% of a rat, while the rat is wandering around randomly on a circular platform. Suppose
+% we observe that the cell fires only when the rat is on the left half of the platform,
+% and that it fires at a constant rate everywhere on the left half; and suppose that on
+% the whole the rat spends half of its time on the left half of the platform. In this case,
+% if we are prevented from seeing where the rat is, but are informed that the neuron
+% has just this very moment fired a spike, we obtain thereby one bit of information
+% about the current location of the rat. Suppose we have a second cell, which fires
+% only in the southwest quarter of the platform; in this case a spike would give us two
+% bits of information. If there were in addition a small amount of background firing,
+% the information would be slightly less than two bits. And so on."
+% From this we can develop some validation tests (see below):
+%
+%   % Assume the rat spends equal time everywhere (uniform dwell map)
+%   dmap = ones(2, 2); 
+% 
+%   % Test 1: 50% left cell
+%   % Fires at 10Hz on the left (NW and SW), 0Hz on the right
+%   rmap_half = [10, 0; 10, 0];
+%   m = get_spatial_info(dmap, rmap_half, 'metrics', 'spatial_info');
+%   disp(sprintf('Cell 1 (Fires on Left Half):'));
+%   disp(sprintf('Bits/Spike: %.2f (Expected: 1.0)', m.skaggs_si_bits_per_spike));
+%   disp(sprintf('Bits/Sec:   %.2f (Expected: 5.0)', m.skaggs_si_bits_per_sec));
+% 
+%   % Test 1: 25% bottom left cell
+%   % Fires at 10Hz only in the SW quarter, 0Hz everywhere else
+%   rmap_quarter = [0,  0; 10, 0];
+%   m = get_spatial_info(dmap, rmap_quarter, 'metrics', 'spatial_info');
+%   disp(sprintf('Cell 2 (Fires in SW Quarter):'));
+%   disp(sprintf('Bits/Spike: %.2f (Expected: 2.0)', m.skaggs_si_bits_per_spike));
+%   disp(sprintf('Bits/Sec:   %.2f (Expected: 5.0)', m.skaggs_si_bits_per_sec));
+% 
+%   % Test 1: uniform cell
+%   % Fires at 10Hz everywhere
+%   rmap_quarter = [10, 10; 10, 10];
+%   m = get_spatial_info(dmap, rmap_quarter, 'metrics', 'spatial_info');
+%   disp(sprintf('Cell 3 (Fires uniformly):'));
+%   disp(sprintf('Bits/Spike: %.2f (Expected: 0.0)', m.skaggs_si_bits_per_spike));
+%   disp(sprintf('Bits/Sec:   %.2f (Expected: 0.0)', m.skaggs_si_bits_per_sec));
+%
 % EXAMPLE
 %
 %   % synthetic ratemap and dwellmap
@@ -110,7 +153,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 %       nexttile
 %       imagesc(rmap)
 %       daspect([1 1 1])
-%       title(sprintf('Place Cell %d\nSpatial info: %.2fb/s',ii,m.skaggs_si_bits_per_sec),'FontWeight','normal'); 
+%       title(sprintf('Place Cell %d\nSpatial info: %.2fb/sec, %.2fb/spike',ii,m.skaggs_si_bits_per_sec,m.skaggs_si_bits_per_spike),'FontWeight','normal'); 
 %   end
 % 
 % SEE ALSO 
@@ -120,6 +163,8 @@ function m = get_spatial_info(dmap,rmap,opts)
 % version 1.0.0, Release 08/05/26 Initial release, adapted from spatialMETRICS
 % version 1.0.1, Release 08/05/26 Cleaned up comments, inputs, code layout
 % version 1.1.0, Release 08/05/26 Greatly improved choice of spatial metrics
+% version 2.0.0, Release 22/07/26 Overhauled Skaggs spatial info and KL divergence
+% version 2.0.1, Release 22/07/26 Added validation test for spatial info
 %
 % AUTHOR 
 % Roddy Grieves
@@ -159,21 +204,37 @@ function m = get_spatial_info(dmap,rmap,opts)
 % Markus et al. (1994) Spatial information content and reliability of hippocampal CA1 neurons: effects of visual input
 % https://onlinelibrary.wiley.com/doi/epdf/10.1002/hipo.450040404
     if ismember("spatial_info",opts.metrics) || ismember("all",opts.metrics)
-        pi = dmap ./ sum(dmap,'all','omitmissing'); % dwell time probability
-        ro = sum(rmap(:) .* pi(:),'all','omitmissing'); % overall firing rate
-        s = sum(pi(:) .* (rmap(:)./ro) .* log2(rmap(:)./ro),'all','omitmissing');
-        m.skaggs_si_bits_per_sec = s;
-    end
+        % pi = dmap ./ sum(dmap,'all','omitmissing'); % dwell time probability
+        % ro = sum(rmap(:) .* pi(:),'all','omitmissing'); % overall firing rate
+        % s = sum(pi(:) .* (rmap(:)./ro) .* log2(rmap(:)./ro),'all','omitmissing');
+        % m.skaggs_si_bits_per_sec = s;
 
-%%%%%%%%%%%%%%%% Skaggs spatial information content (bits per spike)
-% From Skaggs et al. (1996) Theta Phase Precession in Hippocampal Neuronal Populations and the Compression of Temporal Sequences
-% The information rate given by formula (1) is measured in bits per second. If it is
-% divided by the overall mean ring rate of the cell (expressed in spikes per second),
-% then a different kind of information rate is obtained, in units of bits per spike|let us
-% call it the information per spike. This is a measure of the specificity of the cell: the
-% more grandmotherish" the cell, the more information per spike. 
-    if ismember("spatial_info",opts.metrics) || ismember("all",opts.metrics)
-        m.skaggs_si_bits_per_spike = s ./ ro;
+        % occupancy probability (p_i)
+        pi = dmap ./ sum(dmap, 'all', 'omitmissing'); 
+    
+        % overall mean firing rate (bar_lambda)
+        ro = sum(rmap(:) .* pi(:), 'all', 'omitmissing'); 
+    
+        % prevent NaN errors from log2(0)
+        % only calculate using bins where the cell actually fired
+        valid = rmap(:) > 0 & pi(:) > 0;
+        r_valid = rmap(valid);
+        p_valid = pi(valid);
+    
+        % Skaggs information (bits per second)
+        % Formula: sum( p_i * lambda_i * log2(lambda_i / bar_lambda) )
+        m.skaggs_si_bits_per_sec = sum(p_valid .* r_valid .* log2(r_valid ./ ro));
+    
+        % Skaggs spatial information content (bits per spike)
+        % From Skaggs et al. (1996) Theta Phase Precession in Hippocampal Neuronal Populations and the Compression of Temporal Sequences
+        % The information rate given by formula (1) is measured in bits per second. If it is
+        % divided by the overall mean ring rate of the cell (expressed in spikes per second),
+        % then a different kind of information rate is obtained, in units of bits per spike|let us
+        % call it the information per spike. This is a measure of the specificity of the cell: the
+        % more grandmotherish" the cell, the more information per spike. 
+        % Formula: (Bits per Second) / Mean Firing Rate
+        m.skaggs_si_bits_per_spike = m.skaggs_si_bits_per_sec / ro;
+        % This should give the same value as the Kullback–Leibler divergence
     end
 
 %%%%%%%%%%%%%%%% Sparsity
@@ -223,26 +284,48 @@ function m = get_spatial_info(dmap,rmap,opts)
 % manner that the expectation given the first distribution approaches zero. In simplified terms, it is a measure of surprise.
 % https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence
     if ismember("kld",opts.metrics) || ismember("all",opts.metrics)
-        m.kldivergence = sum(p .* (log2(p) - log2(q)));
-    end
+        % identify valid spatial bins (pixels the animal actually visited)
+        valid_bins = ~isnan(rmap) & ~isnan(dmap) & (dmap > 0);
+        
+        % extract only the valid pixels as 1D vectors
+        r_valid = double(rmap(valid_bins));
+        d_valid = double(dmap(valid_bins));
+        
+        % calculate Q: spatial occupancy probability
+        % probability of finding the animal in a specific spatial bin
+        Q = d_valid ./ sum(d_valid); 
+        
+        % calculate P: spatial spike probability
+        spikes = r_valid .* d_valid; 
+        P = spikes ./ sum(spikes);
+        
+        % handle zeros to avoid log2(0) or division by zero (NaNs)
+        % add eps only to bins that are exactly zero, then re-normalize
+        P(P == 0) = eps; 
+        P = P ./ sum(P);
+        Q(Q == 0) = eps; 
+        Q = Q ./ sum(Q);
+        
+        % calculate Kullback-Leibler divergence
+        % formula: sum( P * log2(P / Q) )
+        m.kldivergence = sum(P .* log2(P ./ Q));
 
-%%%%%%%%%%%%%%%% Symmetric Kullback–Leibler divergence
-% This quantity has sometimes been used for feature selection in classification problems, where P and Q are the conditional pdfs of a feature under two different classes.
-    if ismember("kld",opts.metrics) || ismember("all",opts.metrics)
-        KL1 = sum(p .* (log2(p) - log2(q)));
-        KL2 = sum(q .* (log2(q) - log2(p)));
+        % Symmetric Kullback–Leibler divergence
+        % This quantity has sometimes been used for feature selection in classification problems, 
+        % where P and Q are the conditional pdfs of a feature under two different classes.
+        KL1 = sum(P .* (log2(P) - log2(Q)));
+        KL2 = sum(Q .* (log2(Q) - log2(P)));
         m.kldivergence_symmetric = (KL1 + KL2) / 2;
-    end
 
-%%%%%%%%%%%%%%%% Jensen-Shannon divergence
-% In probability theory and statistics, the Jensen–Shannon divergence is a method of measuring the similarity between two probability distributions.
-% It is based on the Kullback–Leibler divergence, with some notable (and useful) differences, including that it is symmetric and it is always a finite value. 
-% The square root of the Jensen–Shannon divergence is a metric often referred to as Jensen-Shannon distance.
-% https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
-    if ismember("kld",opts.metrics) || ismember("all",opts.metrics)
-        logQvect = log2((q + p) / 2);
-        jsd = 0.5 * (sum(p .* (log2(p) - logQvect)) + sum(q .* (log2(q) - logQvect)));
-        m.jsdivergence = sqrt(jsd);
+        % Jensen-Shannon divergence
+        % In probability theory and statistics, the Jensen–Shannon divergence is a method of measuring the similarity between two probability distributions.
+        % It is based on the Kullback–Leibler divergence, with some notable (and useful) differences, including that it is symmetric and it is always a finite value. 
+        % The square root of the Jensen–Shannon divergence is a metric often referred to as Jensen-Shannon distance.
+        % https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence
+        logQvect = log2((Q + P) / 2);
+        jsd = 0.5 * (sum(P .* (log2(P) - logQvect)) + sum(Q .* (log2(Q) - logQvect)));
+        m.jsdivergence = jsd;
+        m.jsdistance = sqrt(jsd);        
     end
 
 %%%%%%%%%%%%%%%% Spatial Coherence 
