@@ -203,6 +203,8 @@ function m = get_spatial_info(dmap,rmap,opts)
 % https://onlinelibrary.wiley.com/doi/epdf/10.1002/%28SICI%291098-1063%281996%296%3A2%3C149%3A%3AAID-HIPO6%3E3.0.CO%3B2-K
 % Markus et al. (1994) Spatial information content and reliability of hippocampal CA1 neurons: effects of visual input
 % https://onlinelibrary.wiley.com/doi/epdf/10.1002/hipo.450040404
+% Souza et al. (2017) On information metrics for spatial coding
+% https://doi.org/10.1101/189084
     if ismember("spatial_info",opts.metrics) || ismember("all",opts.metrics)
         % pi = dmap ./ sum(dmap,'all','omitmissing'); % dwell time probability
         % ro = sum(rmap(:) .* pi(:),'all','omitmissing'); % overall firing rate
