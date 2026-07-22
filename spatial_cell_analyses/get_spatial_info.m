@@ -206,11 +206,6 @@ function m = get_spatial_info(dmap,rmap,opts)
 % Souza et al. (2017) On information metrics for spatial coding
 % https://doi.org/10.1101/189084
     if ismember("spatial_info",opts.metrics) || ismember("all",opts.metrics)
-        % pi = dmap ./ sum(dmap,'all','omitmissing'); % dwell time probability
-        % ro = sum(rmap(:) .* pi(:),'all','omitmissing'); % overall firing rate
-        % s = sum(pi(:) .* (rmap(:)./ro) .* log2(rmap(:)./ro),'all','omitmissing');
-        % m.skaggs_si_bits_per_sec = s;
-
         % occupancy probability (p_i)
         pi = dmap ./ sum(dmap, 'all', 'omitmissing'); 
     
