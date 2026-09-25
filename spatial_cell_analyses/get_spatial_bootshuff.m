@@ -48,7 +48,8 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
 %                Units are in Hertz (Hz). Default value is 50.
 %
 % 'scores'     - (Name-Value) Cell array of strings specifying which analyses to run.
-%                Options: 'all', 'spatial', 'grid', 'directional'. 
+%                Options: 'all', 'spatial', 'grid', 'directional', 'speed',
+%                'ahv', 'boundary'
 %                Default is {'spatial'}.
 %
 % 'metrics'    - (Name-Value) Cell array of strings specifying which spatial info metrics to run.
@@ -137,9 +138,10 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
         opts.poh {mustBeNumeric} = []
         opts.srate {mustBeNumeric} = 50
         opts.trial {mustBeNumeric} = []
+        opts.epoly (:,2) double = []
 
         % what optional shuffles do we want to conduct
-        opts.scores (1,:) string {mustBeMember(opts.scores, {'all','spatial','grid','directional'})} = ['spatial']
+        opts.scores (1,:) string {mustBeMember(opts.scores, {'all','spatial','grid','directional','speed','boundary','ahv'})} = ['spatial']
 
         % inputs passed to get_spatial_info
         opts.metrics (1,:) string {mustBeMember(opts.metrics, {'all','spatial_info','sparsity','mutual_info','entropy','kld','spatial_coherence','snr'})} = ['all']
@@ -148,7 +150,7 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
         opts.grid_type (1,1) string {mustBeMember(opts.grid_type, {'allen','wills','langston','soman','mixed','brandon','sargolini','krupic','savelli'})} = ['savelli']
     end
     if any(ismember(opts.scores,{'all'}))
-        opts.scores = {'spatial','grid','directional'};
+        opts.scores = {'spatial','grid','directional','speed','boundary','ahv'};
     end
 
     % check spike index and generate if necessary
@@ -159,6 +161,7 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
             opts.sindx = knnsearch(pot(:),opts.spt(:));
         end
     end
+    opts.sindx = double(opts.sindx);
 
     % sort out spike data
     pos = [pox(:) poy(:)];
@@ -168,13 +171,26 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
     end
 
     % head direction
-    if any(ismember(opts.scores,{'directional'}))
-        if ~isfield(opts,'poh') || isempty(opts.poh)
-            warning('No head direction info provided, will skip directional analyses')
+    if ~isfield(opts,'poh') || isempty(opts.poh)
+        if any(ismember(opts.scores,{'directional','boundary'}))
+            warning('No head direction info provided, will skip directional & boundary analyses')
+            nindx = ismember(opts.scores,{'directional','boundary'});
+            opts.scores(nindx) = [];
         end
-
+        poh = NaN(size(pox));
+        sph = NaN(size(opts.sindx));
+    else
         poh = opts.poh(:);
         sph = poh(opts.sindx);
+    end
+
+    % boundaries
+    if any(ismember(opts.scores,{'boundary'}))
+        if ~isfield(opts,'epoly') || isempty(opts.epoly)
+            warning('No environment polygon provided, will skip boundary analyses')
+            nindx = ismember(opts.scores,{'boundary'});
+            opts.scores(nindx) = [];            
+        end
     end
 
     % trial shuffle option
@@ -202,6 +218,7 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
     % preallocate
     speedlift = [];
     hd_speedlift = [];
+    b_speedlift = struct;
 
     % precalculate shuffles
     offsets_matrix = zeros(n_trials, opts.iti(2));
@@ -252,10 +269,11 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
     for ii = 1:2
         for jj = 1:opts.iti(ii)
             if ii==1 % Bootstrap (resample spikes with replacement)
-                idx = randi(length(opts.sindx),[length(opts.sindx),1]); % new spike index
-                spk_now = spk(idx,:); % new spike x,y values
+                sindx = randi(length(opts.sindx),[length(opts.sindx),1]); % new spike index
+                spk_now = spk(sindx,:); % new spike x,y values
+                sph_now = sph(sindx);
             elseif ii==2 % Shuffle (shuffle spike train) 
-                sindx2 = zeros(size(opts.sindx)); % Pre-allocate shifted indices
+                sindx = zeros(size(opts.sindx)); % Pre-allocate shifted indices
                 
                 for k = 1:n_trials
                     A_k = trial_bounds(k, 1);
@@ -272,12 +290,13 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
                     
                     % apply interval-shifted modulo arithmetic
                     % s_new = A + mod(s - A + offset, L)
-                    sindx2(spk_mask) = A_k + mod(opts.sindx(spk_mask) - A_k + offset_now, L_k);
+                    sindx(spk_mask) = A_k + mod(opts.sindx(spk_mask) - A_k + offset_now, L_k);
                 end
                 
                 % Only keep spikes that successfully landed within a valid trial block
-                valid_spikes = (sindx2 > 0);
-                spk_now = pos(sindx2(valid_spikes), :);
+                valid_spikes = (sindx > 0);
+                spk_now = pos(sindx(valid_spikes), :);
+                sph_now = poh(sindx(valid_spikes), :);
             end
     
             if any( ismember(opts.scores,{'spatial','grid'}) )
@@ -286,9 +305,10 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
             end
             
             % spatial metrics
-            m = struct;
+            m = NaN(1,4);
             if any( ismember(opts.scores,{'spatial'}) )
-                m = get_spatial_info(dmap_now,rmap_now,'metrics',opts.metrics);
+                si = get_spatial_info(dmap_now,rmap_now,'metrics',opts.metrics);
+                m = [si.skaggs_si_bits_per_sec, si.skaggs_si_bits_per_spike, si.kldivergence];                
             end
     
             % grid score
@@ -299,19 +319,50 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
             end
     
             % head direction
-            h = struct;
+            h = NaN(1,4);
+            md = NaN(1,5);            
             if any( ismember(opts.scores,{'directional'}) )
-                sph_now = sph(idx);
-                [hd_ratemap_now,~,~,xi,~,hd_speedlift] = rate_mapper_hd(poh,sph_now,rmset,'speedlift',hd_speedlift);
-                h = get_directional_info(hd_ratemap_now,xi);
+                [hd_ratemap_now,hd_dwellmap_now,~,xi,~,hd_speedlift] = rate_mapper_hd(poh,sph_now,rmset,'speedlift',hd_speedlift);
+                di = get_directional_info(hd_ratemap_now,hd_dwellmap_now,xi);
+                h = [di.rayleigh_v, di.skaggs_si_bits_per_sec, di.skaggs_si_bits_per_spike, di.kldivergence];
+
+                % multidirectionality
+                [md, ~] = get_multidirectional_scores(hd_ratemap_now,[1:5]);
             end
-    
+
+            % angular head velocity
+            ahv = NaN(1,5);
+            if any( ismember(opts.scores,{'ahv'}) )
+                [ahvscores, ~, ai] = get_ahv_info(pot, rad2deg(poh), sindx);
+                ahv = [ahvscores,ai.skaggs_si_bits_per_sec, ai.skaggs_si_bits_per_spike, ai.kldivergence];
+            end
+
+            % running speed
+            sscore = NaN(1,4);
+            if any( ismember(opts.scores,{'speed'}) )               
+                [speedscore, ~, ~, si] = get_speed_info(pot, pox, poy, sindx);
+                sscore = [speedscore, si.skaggs_si_bits_per_sec, si.skaggs_si_bits_per_spike, si.kldivergence];
+            end
+
+            % boundaries
+            b = NaN(1,8);
+            if any( ismember(opts.scores,{'boundary'}) )    
+                [allo_stats, ego_stats, b_speedlift] = get_boundary_scores([pos poh], sindx, opts.epoly, opts.srate, 'speedlift',b_speedlift);
+                b = [allo_stats.MRL, allo_stats.skaggs_si_bits_per_sec, allo_stats.skaggs_si_bits_per_spike, allo_stats.kldivergence,...
+                    ego_stats.MRL, ego_stats.skaggs_si_bits_per_sec, ego_stats.skaggs_si_bits_per_spike, ego_stats.kldivergence];
+            end
+
             % convert to a table
             i_t = array2table(ii,"VariableNames",{'IterationType'});
-            m_t = struct2table(m, 'AsArray', true);
+            m_t = array2table(m,"VariableNames",{'XY_si_sec','XY_si_spike','XY_kld'});
             g_t = array2table(g,"VariableNames",{'grid_score'});
-            h_t = struct2table(h, 'AsArray', true);
-            dat = [dat; i_t m_t, g_t, h_t];
+            h_t = array2table(h,"VariableNames",{'HD_rv','HD_si_sec','HD_si_spike','HD_kld'});
+            md_t = array2table(md,"VariableNames",{'MD1','MD2','MD3','MD4','MD5'});
+            a_t = array2table(ahv,"VariableNames",{'AHV_left','AHV_right','AHV_si_sec','AHV_si_spike','AHV_kld'}); 
+            s_t = array2table(sscore,"VariableNames",{'speed_score','speed_si_sec','speed_si_spike','speed_kld'}); 
+            b_t = array2table(b,"VariableNames",{'BVC_MRL','BVC_si_sec','BVC_si_spike','BVC_kld','EBC_MRL','EBC_si_sec','EBC_si_spike','EBC_kld'}); 
+            
+            dat = [dat; i_t m_t, g_t, h_t, md_t, a_t, s_t, b_t];
 
 % if ii==2
 %     if jj<30
@@ -326,7 +377,7 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
 
 
         end
-    end  
+    end
 
 %%%%%%%%%%%%%%%% Get results
     % get metric names
@@ -369,7 +420,6 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
                          'RowNames', metricNames);
     % dat.offset = zeros(size(dat,1),1);
     % dat.offset(isShuf) = offsets(:);
-
 
 
 

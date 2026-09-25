@@ -1,4 +1,4 @@
-function h = get_directional_info(rmap,xi,opts)
+function h = get_directional_info(rmap,dmap,xi,opts)
 % get_directional_info calculate various head direction measures
 % Function calculates the most commonly used head direction measures and
 % statistics, using many functions from the circular statistics toolbox
@@ -57,6 +57,7 @@ function h = get_directional_info(rmap,xi,opts)
 %%%%%%%%%%%%%%%% ARGUMENT CHECK
     arguments
         rmap double
+        dmap double
         xi double
         opts.metrics (1,:) string {mustBeMember(opts.metrics, ["all", "rayleigh", "stats"])} = ["all"]
     end
@@ -67,6 +68,12 @@ function h = get_directional_info(rmap,xi,opts)
     xi = xi(:);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% FUNCTION BODY
+%%%%%%%%%%%%%%%% Other statistics
+    h = struct;
+    if ismember("other",opts.metrics) || ismember("all",opts.metrics)          
+        h = get_spatial_info(dmap,rmap,'metrics',{'spatial_info','kld'});
+    end
+
 %%%%%%%%%%%%%%%% Circular statistics
     if ismember("rayleigh",opts.metrics) || ismember("all",opts.metrics)          
         h.rayleigh_v = circ_r(xi,rmap); % rayleigh vector length
@@ -81,7 +88,6 @@ function h = get_directional_info(rmap,xi,opts)
         h.hd_mean = rad2deg( circ_mean(xi,rmap) ); % mean angle
         h.hd_stdev = rad2deg( circ_std(xi,rmap) ); % std deviation angle
     end
-
 end
 
 

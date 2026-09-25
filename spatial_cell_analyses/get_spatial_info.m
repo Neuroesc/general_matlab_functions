@@ -205,6 +205,8 @@ function m = get_spatial_info(dmap,rmap,opts)
 % https://onlinelibrary.wiley.com/doi/epdf/10.1002/hipo.450040404
 % Souza et al. (2017) On information metrics for spatial coding
 % https://doi.org/10.1101/189084
+    m.skaggs_si_bits_per_sec = NaN;
+    m.skaggs_si_bits_per_spike = NaN;
     if ismember("spatial_info",opts.metrics) || ismember("all",opts.metrics)
         % occupancy probability (p_i)
         pi = dmap ./ sum(dmap, 'all', 'omitmissing'); 
@@ -239,6 +241,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % The sparsity measure is  an adaptation  to space of  a formula invented by Treves and Rolls (1 99 1); the adaptation measures the 
 % fraction of the environment  in which a cell  is active. Intuitively, a sparsity of, say, 0.1 means that the place field of the cell 
 % occupies 1/10 of the area the rat traverses.
+    m.sparsity = NaN;
     if ismember("sparsity",opts.metrics) || ismember("all",opts.metrics)
         m.sparsity = ( sum(pi(:).*rmap(:),'all','omitmissing').^2 ) ./ ( sum(pi(:).*(rmap(:).^2),'all','omitmissing') );
     end
@@ -251,6 +254,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % mutual information is the same as the uncertainty contained in Y (or X) alone, namely the entropy of Y (or X). Moreover, this mutual 
 % information is the same as the entropy of X and as the entropy of Y. (A very special case of this is when X and Y are the same random variable.)
 % https://en.wikipedia.org/wiki/Mutual_information
+    m.mutual_info = NaN;
     if ismember("mutual_info",opts.metrics) || ismember("all",opts.metrics)
         m.mutual_info =  MutualInformation(rmap8(:),dmap8(:));
     end
@@ -261,6 +265,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % intensity image.  Entropy is a statistical measure of randomness that can be
 % used to characterize the texture of the input image.  Entropy is defined as
 % -sum(p.*log2(p)) where p contains the histogram counts returned from IMHIST.
+    m.shannon_entropy = NaN;
     if ismember("entropy",opts.metrics) || ismember("all",opts.metrics)
         m.shannon_entropy = -sum(p.*log2(p));
     end
@@ -269,6 +274,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % In information theory, the cross entropy between two probability distributions {\displaystyle p} p and {\displaystyle q} q over the same underlying 
 % set of events measures the average number of bits needed to identify an event drawn from the set, if a coding scheme is used that is optimized for 
 % an "unnatural" probability distribution {\displaystyle q} q, rather than the "true" distribution {\displaystyle p} p.
+    m.cross_entropy = NaN;
     if ismember("entropy",opts.metrics) || ismember("all",opts.metrics)
         ce0 = p .* log2(q); % using log base 2 means the output is measured in bits
         m.cross_entropy = -sum(ce0,'all','omitmissing');
@@ -280,6 +286,10 @@ function m = get_spatial_info(dmap,rmap,opts)
 % behavior of two different distributions, while a Kullback–Leibler divergence of 1 indicates that the two distributions behave in such a different 
 % manner that the expectation given the first distribution approaches zero. In simplified terms, it is a measure of surprise.
 % https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence
+    m.kldivergence = NaN;
+    m.kldivergence_symmetric = NaN;
+    m.jsdivergence = NaN;
+    m.jsdistance = NaN;
     if ismember("kld",opts.metrics) || ismember("all",opts.metrics)
         % identify valid spatial bins (pixels the animal actually visited)
         valid_bins = ~isnan(rmap) & ~isnan(dmap) & (dmap > 0);
@@ -330,6 +340,7 @@ function m = get_spatial_info(dmap,rmap,opts)
 % https://dx.doi.org/10.1523%2FJNEUROSCI.1704-07.2007
 % The spatial coherence for each firing rate map was computed as the mean correlation between the firing rate of each bin with the 
 % aggregate rate of the 24 nearest bins.
+    m.spatial_coherence = NaN;
     if ismember("spatial_coherence",opts.metrics) || ismember("all",opts.metrics)
         meanf = ones([5 5]);
         meanf(3,3) = 0;
@@ -344,15 +355,12 @@ function m = get_spatial_info(dmap,rmap,opts)
 % there is  in principle  no upper  limit. A similar measure was  used by Barnes et al. (1983), except that the "out-of-field" firing rate was 
 % used instead of the mean rate. The present definition is prefer- able because it does  not depend  on identifying  a  "place field," and because 
 % it is much less sensitive to noise. 
+    m.signal_to_noise = NaN;
     if ismember("snr",opts.metrics) || ismember("all",opts.metrics)
         m.signal_to_noise = max(rmap,[],"all",'omitmissing') ./ mean(rmap,'all','omitmissing');
     end
 
 end
-
-
-
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% JointEntropy sub function
 function H = JointEntropy(X)
