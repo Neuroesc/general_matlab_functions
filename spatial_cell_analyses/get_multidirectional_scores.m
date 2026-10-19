@@ -80,6 +80,11 @@ function [z_scores, peak_orientations] = get_multidirectional_scores(hd_rmap,tar
     z_scores = NaN(1, 3);
     peak_orientations = NaN(1, 3);
     
+    % skip if map is empty
+    if ~any(hd_rmap,"all")
+        return
+    end
+
     for i = 1:length(target_k)
         k = target_k(i);
         target_idx = k + 1; 
