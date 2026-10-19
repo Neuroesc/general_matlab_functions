@@ -140,8 +140,11 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
         opts.trial {mustBeNumeric} = []
         opts.epoly (:,2) double = []
 
+        % what evaluation types to conduct
+        opts.eval_type (1,:) string {mustBeMember(opts.eval_type, {'observed', 'shuffle', 'bootstrap'})} = ["observed", "shuffle", "bootstrap"]
+
         % what optional shuffles do we want to conduct
-        opts.scores (1,:) string {mustBeMember(opts.scores, {'all','spatial','grid','directional','speed','boundary','ahv'})} = ['spatial']
+        opts.scores (1,:) string {mustBeMember(opts.scores, {'all','spatial','grid','directional','speed','boundary','ahv','anova'})} = ['spatial']
 
         % inputs passed to get_spatial_info
         opts.metrics (1,:) string {mustBeMember(opts.metrics, {'all','spatial_info','sparsity','mutual_info','entropy','kld','spatial_coherence','snr'})} = ['all']
@@ -234,7 +237,12 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
         % Draw random offsets for this specific trial across all shuffle iterations
         offsets_matrix(k, :) = validOffsets(randi(numel(validOffsets), opts.iti(2), 1));
     end
-    n = numel(pot); 
+    % n = numel(pot); 
+
+    % Setup ANOVA inputs
+    if any(ismember(opts.scores, {'anova'}))
+        [dwell_trials, bin_idx, total_bins] = setup_anova_bins(pox, poy, rmset, trial_bounds, opts.srate);
+    end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% FUNCTION BODY
 %%%%%%%%%%%%%%%% Bootstrap and shuffle
@@ -262,166 +270,290 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
 % resampling and shuffling differ only in the way the spikes are treated in each
 % iteration. We will collect the data in dat and then calculate the result at
 % the end.
-% figure
-% tiledlayout('flow')
     rng(999); % for reproducibility
     dat = table;
-    for ii = 1:2
-        for jj = 1:opts.iti(ii)
-            if ii==1 % Bootstrap (resample spikes with replacement)
-                sindx = randi(length(opts.sindx),[length(opts.sindx),1]); % new spike index
-                spk_now = spk(sindx,:); % new spike x,y values
-                sph_now = sph(sindx);
-            elseif ii==2 % Shuffle (shuffle spike train) 
-                sindx = zeros(size(opts.sindx)); % Pre-allocate shifted indices
+
+    % Build dynamic iteration queue based on user inputs
+    % 1 = Bootstrap, 2 = Boot-Shuffle, 3 = Reg-Shuffle, 4 = Observed
+    run_types = [];
+    if ismember('bootstrap', opts.eval_type)
+        run_types = [run_types, repmat(1, 1, opts.iti(1))]; 
+        run_types = [run_types, repmat(2, 1, opts.iti(2))]; 
+    end
+    if ismember('shuffle', opts.eval_type)
+        run_types = [run_types, repmat(3, 1, opts.iti(2))]; 
+    end
+    if ismember('observed', opts.eval_type) || ismember('shuffle', opts.eval_type)
+        run_types = [run_types, 4]; % Always need 1 raw observed if shuffling or requested
+    end
+
+    % run the shuffles
+    for iter = 1:length(run_types)
+        current_type = run_types(iter);
+        
+        if current_type == 1 % Bootstrap (resample spikes with replacement)
+            resample_idx = randi(length(opts.sindx), [length(opts.sindx), 1]); 
+            sindx = opts.sindx(resample_idx); 
+            spk_now = spk(resample_idx, :); 
+            sph_now = sph(resample_idx);
+            
+        elseif current_type == 2 || current_type == 3 % Shuffle routines
+            sindx = zeros(size(opts.sindx)); 
+            
+            for k = 1:n_trials
+                A_k = trial_bounds(k, 1);
+                B_k = trial_bounds(k, 2);
+                L_k = trial_bounds(k, 3);
+                offset_now = offsets_matrix(k, randi(opts.iti(2))); % Random offset from precalculated
                 
-                for k = 1:n_trials
-                    A_k = trial_bounds(k, 1);
-                    B_k = trial_bounds(k, 2);
-                    L_k = trial_bounds(k, 3);
-                    offset_now = offsets_matrix(k, jj);
-                    
-                    % find all spikes whose original position index falls inside this trial
-                    spk_mask = (opts.sindx >= A_k & opts.sindx <= B_k);
-                    
-                    if ~any(spk_mask)
-                        continue % Cell didn't fire during this trial, skip
-                    end
-                    
-                    % apply interval-shifted modulo arithmetic
-                    % s_new = A + mod(s - A + offset, L)
-                    sindx(spk_mask) = A_k + mod(opts.sindx(spk_mask) - A_k + offset_now, L_k);
+                spk_mask = (opts.sindx >= A_k & opts.sindx <= B_k);
+                if ~any(spk_mask)
+                    continue 
                 end
                 
-                % Only keep spikes that successfully landed within a valid trial block
-                valid_spikes = (sindx > 0);
-                spk_now = pos(sindx(valid_spikes), :);
-                sph_now = poh(sindx(valid_spikes), :);
-            end
-    
-            if any( ismember(opts.scores,{'spatial','grid'}) )
-                % bootstrapped firing rate map          
-                [rmap_now,dmap_now,~,~,speedlift] = rate_mapper(pos.*10,spk_now.*10,rmset,speedlift);
+                sindx(spk_mask) = A_k + mod(opts.sindx(spk_mask) - A_k + offset_now, L_k);
             end
             
-            % spatial metrics
-            m = NaN(1,4);
-            if any( ismember(opts.scores,{'spatial'}) )
-                si = get_spatial_info(dmap_now,rmap_now,'metrics',opts.metrics);
-                m = [si.skaggs_si_bits_per_sec, si.skaggs_si_bits_per_spike, si.kldivergence];                
-            end
-    
-            % grid score
-            g = NaN;
-            if any( ismember(opts.scores,{'grid'}) )
-                automap_boot = ndautoCORR(rmap_now,rmap_now,50);
-                g = get_grid_score(automap_boot,rmset.binsize/10,'method',opts.grid_type); 
-            end
-    
-            % head direction
-            h = NaN(1,4);
-            md = NaN(1,5);            
-            if any( ismember(opts.scores,{'directional'}) )
-                [hd_ratemap_now,hd_dwellmap_now,~,xi,~,hd_speedlift] = rate_mapper_hd(poh,sph_now,rmset,'speedlift',hd_speedlift);
-                di = get_directional_info(hd_ratemap_now,hd_dwellmap_now,xi);
-                h = [di.rayleigh_v, di.skaggs_si_bits_per_sec, di.skaggs_si_bits_per_spike, di.kldivergence];
-
-                % multidirectionality
-                [md, ~] = get_multidirectional_scores(hd_ratemap_now,[1:5]);
-            end
-
-            % angular head velocity
-            ahv = NaN(1,5);
-            if any( ismember(opts.scores,{'ahv'}) )
-                [ahvscores, ~, ai] = get_ahv_info(pot, rad2deg(poh), sindx);
-                ahv = [ahvscores,ai.skaggs_si_bits_per_sec, ai.skaggs_si_bits_per_spike, ai.kldivergence];
-            end
-
-            % running speed
-            sscore = NaN(1,4);
-            if any( ismember(opts.scores,{'speed'}) )               
-                [speedscore, ~, ~, si] = get_speed_info(pot, pox, poy, sindx);
-                sscore = [speedscore, si.skaggs_si_bits_per_sec, si.skaggs_si_bits_per_spike, si.kldivergence];
-            end
-
-            % boundaries
-            b = NaN(1,8);
-            if any( ismember(opts.scores,{'boundary'}) )    
-                [allo_stats, ego_stats, b_speedlift] = get_boundary_scores([pos poh], sindx, opts.epoly, opts.srate, 'speedlift',b_speedlift);
-                b = [allo_stats.MRL, allo_stats.skaggs_si_bits_per_sec, allo_stats.skaggs_si_bits_per_spike, allo_stats.kldivergence,...
-                    ego_stats.MRL, ego_stats.skaggs_si_bits_per_sec, ego_stats.skaggs_si_bits_per_spike, ego_stats.kldivergence];
-            end
-
-            % convert to a table
-            i_t = array2table(ii,"VariableNames",{'IterationType'});
-            m_t = array2table(m,"VariableNames",{'XY_si_sec','XY_si_spike','XY_kld'});
-            g_t = array2table(g,"VariableNames",{'grid_score'});
-            h_t = array2table(h,"VariableNames",{'HD_rv','HD_si_sec','HD_si_spike','HD_kld'});
-            md_t = array2table(md,"VariableNames",{'MD1','MD2','MD3','MD4','MD5'});
-            a_t = array2table(ahv,"VariableNames",{'AHV_left','AHV_right','AHV_si_sec','AHV_si_spike','AHV_kld'}); 
-            s_t = array2table(sscore,"VariableNames",{'speed_score','speed_si_sec','speed_si_spike','speed_kld'}); 
-            b_t = array2table(b,"VariableNames",{'BVC_MRL','BVC_si_sec','BVC_si_spike','BVC_kld','EBC_MRL','EBC_si_sec','EBC_si_spike','EBC_kld'}); 
+            valid_spikes = find(sindx > 0);
             
-            dat = [dat; i_t m_t, g_t, h_t, md_t, a_t, s_t, b_t];
-
-% if ii==2
-%     if jj<30
-% nexttile
-% imagesc(rmap_now,'AlphaData',~isnan(rmap_now));
-% daspect([1 1 1])
-% colormap('turbo')
-%     else
-%         keyboard
-%     end
-% end
-
-
+            % Apply resampling ONLY if it is a Boot-Shuffle (Type 2)
+            if current_type == 2
+                resample_idx = randi(length(valid_spikes), [length(valid_spikes), 1]);
+                valid_spikes = valid_spikes(resample_idx);
+            end
+            
+            sindx = sindx(valid_spikes);
+            spk_now = pos(sindx, :);
+            sph_now = poh(sindx, :);
+            
+        elseif current_type == 4 % Observed (raw data, no manipulation)
+            sindx = opts.sindx;
+            spk_now = spk;
+            sph_now = sph;
         end
+
+        if any( ismember(opts.scores,{'spatial','grid'}) )
+            % bootstrapped firing rate map          
+            [rmap_now,dmap_now,~,~,speedlift] = rate_mapper(pos.*10,spk_now.*10,rmset,speedlift);
+        end
+        
+        % spatial metrics
+        m = NaN(1,2);
+        if any( ismember(opts.scores,{'spatial'}) )
+            si = get_spatial_info(dmap_now,rmap_now,'metrics',opts.metrics);
+            m = [si.skaggs_si_bits_per_sec, si.skaggs_si_bits_per_spike];                
+        end
+
+        % grid score
+        g = NaN;
+        if any( ismember(opts.scores,{'grid'}) )
+            automap_boot = ndautoCORR(rmap_now,rmap_now,50);
+            g = get_grid_score(automap_boot,rmset.binsize/10,'method',opts.grid_type); 
+        end
+
+        % head direction
+        h = NaN(1,3);
+        md = NaN(1,5);            
+        if any( ismember(opts.scores,{'directional'}) )
+            [hd_ratemap_now,hd_dwellmap_now,~,xi,~,hd_speedlift] = rate_mapper_hd(poh,sph_now,rmset,'speedlift',hd_speedlift);
+            di = get_directional_info(hd_ratemap_now,hd_dwellmap_now,xi);
+            h = [di.rayleigh_v, di.skaggs_si_bits_per_sec, di.skaggs_si_bits_per_spike];
+
+            % multidirectionality
+            [md, ~] = get_multidirectional_scores(hd_ratemap_now,[1:5]);
+        end
+
+        % angular head velocity
+        ahv = NaN(1,4);
+        if any( ismember(opts.scores,{'ahv'}) )
+            [ahvscores, ~, ai] = get_ahv_info(pot, rad2deg(poh), sindx);
+            ahv = [ahvscores,ai.skaggs_si_bits_per_sec, ai.skaggs_si_bits_per_spike];
+        end
+
+        % running speed
+        sscore = NaN(1,3);
+        if any( ismember(opts.scores,{'speed'}) )               
+            [speedscore, ~, ~, si] = get_speed_info(pot, pox, poy, sindx);
+            sscore = [speedscore, si.skaggs_si_bits_per_sec, si.skaggs_si_bits_per_spike];
+        end
+
+        % boundaries
+        b = NaN(1,6);
+        if any( ismember(opts.scores,{'boundary'}) )    
+            [allo_stats, ego_stats, b_speedlift] = get_boundary_scores([pos poh], sindx, opts.epoly, opts.srate, 'speedlift',b_speedlift);
+            b = [allo_stats.MRL, allo_stats.skaggs_si_bits_per_sec, allo_stats.skaggs_si_bits_per_spike,...
+                ego_stats.MRL, ego_stats.skaggs_si_bits_per_sec, ego_stats.skaggs_si_bits_per_spike];
+        end
+
+        % Compute ANOVA F-statistic
+        f_stat = NaN;
+        if any(ismember(opts.scores, {'anova'}))
+            f_stat = compute_anova_fstat(sindx, bin_idx, total_bins, n_trials, trial_bounds, dwell_trials);
+        end
+
+        % convert to a table
+        i_t = array2table(current_type, "VariableNames", {'IterationType'});
+        m_t = array2table(m,"VariableNames",{'XY_si_sec','XY_si_spike'});
+        g_t = array2table(g,"VariableNames",{'grid_score'});
+        h_t = array2table(h,"VariableNames",{'HD_rv','HD_si_sec','HD_si_spike'});
+        md_t = array2table(md,"VariableNames",{'MD1','MD2','MD3','MD4','MD5'});
+        a_t = array2table(ahv,"VariableNames",{'AHV_left','AHV_right','AHV_si_sec','AHV_si_spike'}); 
+        s_t = array2table(sscore,"VariableNames",{'speed_score','speed_si_sec','speed_si_spike'}); 
+        b_t = array2table(b,"VariableNames",{'BVC_MRL','BVC_si_sec','BVC_si_spike','EBC_MRL','EBC_si_sec','EBC_si_spike'}); 
+        f_t = array2table(f_stat,"VariableNames",{'ANOVA_F'});   
+
+        dat = [dat; i_t m_t, g_t, h_t, md_t, a_t, s_t, b_t, f_t];
     end
 
 %%%%%%%%%%%%%%%% Get results
-    % get metric names
     metricNames = dat.Properties.VariableNames(2:end);
     
-    % split the data
-    isBoot = dat{:, 1} == 1;
-    isShuf = dat{:, 1} == 2;
+    bootMatrix = dat{dat{:, 1} == 1, 2:end};
+    bootShufMatrix = dat{dat{:, 1} == 2, 2:end};
+    regShufMatrix = dat{dat{:, 1} == 3, 2:end};
+    obsMatrix = dat{dat{:, 1} == 4, 2:end};
     
-    bootMatrix = dat{isBoot, 2:end};
-    shufMatrix = dat{isShuf, 2:end};
-    numShuffles = size(shufMatrix, 1);
+    % Initialize outputs with NaNs in case certain evaluation types were skipped
+    obsVals = NaN(1, size(obsMatrix, 2));
+    if ~isempty(obsMatrix)
+        obsVals = obsMatrix(1, :);
+    end
     
-    % calculate bootstrapped estimates
     bootMean = mean(bootMatrix, 1, 'omitnan');
-    bootMedian = median(bootMatrix, 1, 'omitnan'); % Median is often safer for skewed metrics
-    bootCI_low = prctile(bootMatrix, 2.5, 1); % Lower 95% Confidence bound
-    bootCI_hi = prctile(bootMatrix, 97.5, 1); % Upper 95% Confidence bound
+    bootMedian = median(bootMatrix, 1, 'omitnan'); 
+    bootCI_low = prctile(bootMatrix, 2.5, 1); 
+    bootCI_hi = prctile(bootMatrix, 97.5, 1); 
     
-    % z-scores (parametric)
-    shufMean = mean(shufMatrix, 1, 'omitnan');
-    shufStd = std(shufMatrix, 0, 1, 'omitnan');
-    zScores = (bootMean - shufMean) ./ shufStd;
+    % Observed values vs Regular Shuffle
+    zScores_obs = NaN(size(obsVals));
+    pValues_Right_obs = NaN(size(obsVals));
+    pValues_Left_obs = NaN(size(obsVals));
+    shuf95th = NaN(size(obsVals));
+    shuf5th = NaN(size(obsVals));
     
-    % significance (non-parametric)
-    % P-value: what fraction of shuffles beat our bootstrapped mean?
-    % Adding +1 to numerator and denominator is a standard correction 
-    % to avoid p=0 exactly (pseudo-count).
-    % RIGHT-TAILED (for spatial info, grid score, etc. - higher is better)
-    pValues_Right = (sum(shufMatrix >= bootMean, 1) + 1) / (numShuffles + 1);
-    shuf95th = prctile(shufMatrix, 95, 1);
+    if ~isempty(regShufMatrix)
+        numRegShuffles = size(regShufMatrix, 1);
+        zScores_obs = (obsVals - mean(regShufMatrix, 1, 'omitnan')) ./ std(regShufMatrix, 0, 1, 'omitnan'); 
+        
+        pValues_Right_obs = (sum(regShufMatrix >= obsVals, 1) + 1) / (numRegShuffles + 1);
+        pValues_Left_obs  = (sum(regShufMatrix <= obsVals, 1) + 1) / (numRegShuffles + 1);
+        
+        % Wipe p-values for metrics that were not computed
+        nan_cols_obs = all(isnan(regShufMatrix), 1);
+        pValues_Right_obs(nan_cols_obs) = NaN;
+        pValues_Left_obs(nan_cols_obs) = NaN;
+        
+        shuf95th = prctile(regShufMatrix, 95, 1);
+        shuf5th = prctile(regShufMatrix, 5, 1);
+    end
+
+    % Bootstrapped values vs Resampled Shuffle
+    zScores = NaN(size(bootMean));
+    pValues_Right = NaN(size(bootMean));
+    pValues_Left = NaN(size(bootMean));
     
-    % LEFT-TAILED (For sparsity, entropy, etc. - lower is better)
-    pValues_Left  = (sum(shufMatrix <= bootMean, 1) + 1) / (numShuffles + 1);
-    shuf5th = prctile(shufMatrix, 5, 1);
+    if ~isempty(bootShufMatrix)
+        numBootShuffles = size(bootShufMatrix, 1);
+        zScores = (bootMean - mean(bootShufMatrix, 1, 'omitnan')) ./ std(bootShufMatrix, 0, 1, 'omitnan'); 
+        
+        pValues_Right = (sum(bootShufMatrix >= bootMean, 1) + 1) / (numBootShuffles + 1);
+        pValues_Left  = (sum(bootShufMatrix <= bootMean, 1) + 1) / (numBootShuffles + 1);
+        
+        % Wipe p-values for metrics that were not computed
+        nan_cols_boot = all(isnan(bootShufMatrix), 1);
+        pValues_Right(nan_cols_boot) = NaN;
+        pValues_Left(nan_cols_boot) = NaN;
+    end
 
     % Compile everything into summary table
-    res = table(bootMean', bootMedian', bootCI_low', bootCI_hi',zScores', pValues_Right', shuf95th', pValues_Left', shuf5th',...
-                         'VariableNames', {'Boot_mean', 'Boot_median', 'Boot_CI_lower','Boot_CI_upper', 'z_score', 'p_value(right)', 'shuffle_95th_prctile','p_value(left)', 'shuffle_5th_prctile'}, ...
+    res = table(obsVals', bootMean', bootMedian', bootCI_low', bootCI_hi', zScores', pValues_Right', shuf95th', pValues_Left', shuf5th', zScores_obs', pValues_Right_obs', pValues_Left_obs',...
+                         'VariableNames', {'Observed', 'Boot_mean', 'Boot_median', 'Boot_CI_lower','Boot_CI_upper', 'z_score', 'p_value(right)', 'shuffle_95th_prctile','p_value(left)', 'shuffle_5th_prctile', 'z_score_obs', 'p_value(right)_obs','p_value(left)_obs'}, ...
                          'RowNames', metricNames);
-    % dat.offset = zeros(size(dat,1),1);
-    % dat.offset(isShuf) = offsets(:);
 
+end
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% HELPER FUNCTIONS
+%%%%%%%%%%%%%%%% setup_anova_bins
+function [dwell_trials, bin_idx, total_bins] = setup_anova_bins(pox, poy, rmset, trial_bounds, srate)
+    % Define spatial bin edges
+    mid_x = mean(rmset.maplims([1 3]));
+    mid_y = mean(rmset.maplims([2 4]));
+    max_x = rmset.maplims([3]) - mid_x;
+    max_y = rmset.maplims([4]) - mid_y;
+    xvec = 0 : rmset.binsize : (max_x + rmset.binsize + rmset.padding); 
+    yvec = 0 : rmset.binsize : (max_y + rmset.binsize + rmset.padding);    
+    xvec = unique(sort([-xvec xvec], 'ascend')); 
+    yvec = unique(sort([-yvec yvec], 'ascend'));
+    
+    % Discretize coordinates into 1D bin indices
+    pox_c = pox - mid_x;
+    poy_c = poy - mid_y;
+    x_idx = discretize(pox_c, xvec);
+    y_idx = discretize(poy_c, yvec);
+    
+    num_x_bins = length(xvec) - 1;
+    num_y_bins = length(yvec) - 1;
+    total_bins = num_x_bins * num_y_bins;
+    
+    valid_pos = ~isnan(x_idx) & ~isnan(y_idx);
+    bin_idx = NaN(size(pox));
+    bin_idx(valid_pos) = sub2ind([num_y_bins, num_x_bins], y_idx(valid_pos), x_idx(valid_pos));
+    
+    % Accumulate dwell times per trial
+    n_trials = size(trial_bounds, 1);
+    dwell_trials = zeros(n_trials, total_bins);
+    for k = 1:n_trials
+        idx_k = trial_bounds(k, 1):trial_bounds(k, 2);
+        valid_k = bin_idx(idx_k);
+        valid_k = valid_k(~isnan(valid_k));
+        if ~isempty(valid_k)
+            dwell_trials(k, :) = accumarray(valid_k(:), 1, [total_bins, 1])' * (1/srate);
+        end
+    end
+    dwell_trials(dwell_trials < rmset.mindwell) = NaN;
+end
 
+%%%%%%%%%%%%%%%% compute_anova_fstat
+function [f_stat] = compute_anova_fstat(sindx, bin_idx, total_bins, n_trials, trial_bounds, dwell_trials)
+    % Aggregate spike counts per trial
+    spike_trials = zeros(n_trials, total_bins);
+    for k = 1:n_trials
+        A_k = trial_bounds(k, 1);
+        B_k = trial_bounds(k, 2);
+        spk_mask = (sindx >= A_k & sindx <= B_k);
+        
+        if any(spk_mask)
+            spk_bins = bin_idx(sindx(spk_mask));
+            spk_bins = spk_bins(~isnan(spk_bins));
+            if ~isempty(spk_bins)
+                spike_trials(k, :) = accumarray(spk_bins(:), 1, [total_bins, 1])';
+            end
+        end
+    end
+    
+    % Calculate sum of squares and F-statistic
+    f_stat = NaN;
+    rate_trials = spike_trials ./ dwell_trials;
+    valid_rates = ~isnan(rate_trials);
+    n_j = sum(valid_rates, 1); 
+    
+    valid_bins = n_j > 1; % Require at least two passes to compute variance
+    
+    if sum(valid_bins) > 1
+        Y_j = sum(rate_trials(:, valid_bins), 1, 'omitnan') ./ n_j(valid_bins); 
+        Y_tot = sum(rate_trials(:, valid_bins), 'all', 'omitnan') / sum(n_j(valid_bins)); 
+        
+        SSB = sum(n_j(valid_bins) .* (Y_j - Y_tot).^2);
+        diff_sq = (rate_trials(:, valid_bins) - Y_j).^2;
+        SSW = sum(diff_sq, 'all', 'omitnan');
+        
+        df_B = sum(valid_bins) - 1;
+        df_W = sum(n_j(valid_bins)) - sum(valid_bins);
+        
+        if SSW > 0 && df_W > 0
+            f_stat = (SSB / df_B) / (SSW / df_W);
+        end
+    end
+end
 
 
