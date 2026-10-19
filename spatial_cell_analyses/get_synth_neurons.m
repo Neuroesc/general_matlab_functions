@@ -1,4 +1,4 @@
-function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
+function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,nnoise,opts)
 % get_synth_neurons Simulates animal trajectory and spatial cells
 %
 % Generates a correlated random walk trajectory for a virtual animal in a 
@@ -57,6 +57,18 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
 % 'hd_widths' - 1x2, min and max head direction tuning width allowed
 %                Default value is [2 6]
 %
+% 'noise_level'    - (Name-Value) Scalar, non-negative double that specifies the proportion 
+%                    of expected signal spikes to add uniformly as background noise across 
+%                    the session. A value of 1 adds an equal number of noise spikes as 
+%                    expected signal spikes.
+%                    Default value is 0.
+%
+% 'overdispersion' - (Name-Value) Scalar, double between 0 and 1 that specifies the magnitude 
+%                    of a 1.5 Hz sinusoidal modulation applied to the instantaneous firing 
+%                    rate to simulate trial-by-trial field dropout. A value of 0.8 means 
+%                    the likelihood varies by 80%.
+%                    Default value is 0.
+%
 % OUTPUT
 %
 % 'trajectory' - Structure containing the fields 't', 'x', 'y', and 'hd'.
@@ -82,6 +94,8 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
 
 % HISTORY
 %
+% version 1.2.0, Release 15/10/26 Added noise cell type and comments for clarity
+% version 1.1.0, Release 15/10/26 Added noise_level and overdispersion parameters
 % version 1.0.0, Release 08/05/26 Initial release
 %
 % AUTHOR 
@@ -97,10 +111,11 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
         nhpc (1,1) double {mustBeNonnegative, mustBeInteger} = 1
         ngrid (1,1) double {mustBeNonnegative, mustBeInteger} = 1
         nhd (1,1) double {mustBeNonnegative, mustBeInteger} = 1
-        
+        nnoise (1,1) double {mustBeNonnegative, mustBeInteger} = 0
+
         % environment and simulation options
         opts.duration (1,1) double {mustBePositive} = 600 % sim duration in seconds
-        opts.boxsize (1,1) double {mustBePositive} = 100  % environment size in cm
+        opts.boxsize (1,:) double {mustBePositive} = 100  % environment size in cm
         opts.fs (1,1) double {mustBePositive} = 50        % sample rate of positions in Hz
         opts.speed (1,1) double {mustBePositive} = 20     % speed of the animal in cm/s
         opts.plot (1,1) logical = false                   % Plot first cell of each type?
@@ -112,22 +127,38 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
         opts.grid_max_angle (1,1) double {mustBePositive} = pi/3 % max grid orientation
         opts.hd_widths (1,2) double {mustBePositive} = [2 6] % min, max HD tuning width
         
+        % Noise and overdispersion parameters
+        opts.noise_level (1,1) double {mustBeNonnegative} = 0 % proportion of field spikes to add as random noise
+        opts.overdispersion (1,1) double {mustBeInRange(opts.overdispersion, 0, 1)} = 0 % magnitude of overdispersion (0 to 1)
     end
     
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% FUNCTION BODY
 %%%%%%%%%%%%%%%% Generate Animal Trajectory (Correlated Random Walk)
+% The virtual animal trajectory is simulated using a correlated random walk model.
+% At each discrete time step, the agent's current heading direction is updated
+% by adding a small angular deviation drawn from a normal distribution.
+% The agent moves forward along this heading at a constant running speed.
+% To keep the agent contained within the square arena and to ensure relatively
+% uniform spatial sampling over the session duration, interactions with the
+% walls are modeled as perfectly elastic collisions where the angle of
+% reflection equals the angle of incidence.
     % Setup Time
     dt = 1 / opts.fs;
     t = 0:dt:opts.duration;
     N = length(t);
     boxSize = opts.boxsize;
+    if numel(boxSize)==1
+        boxSize = [boxSize boxSize];
+    end
     
     % preallocate
     x = zeros(1, N);
     y = zeros(1, N);
     hd = zeros(1, N);
     
-    x(1) = boxSize / 2; y(1) = boxSize / 2; hd(1) = rand() * 2 * pi;
+    x(1) = boxSize(1) / 2; 
+    y(1) = boxSize(2) / 2; 
+    hd(1) = rand() * 2 * pi;
     turn_std = 0.2; 
     
     for i = 2:N
@@ -139,11 +170,11 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
         next_y = y(i-1) + vy * dt;
         
         % Wall Collisions
-        if next_x <= 0 || next_x >= boxSize
+        if next_x <= 0 || next_x >= boxSize(1)
             hd(i) = pi - hd(i); 
             next_x = x(i-1) + (opts.speed * cos(hd(i)) * dt); 
         end
-        if next_y <= 0 || next_y >= boxSize
+        if next_y <= 0 || next_y >= boxSize(2)
             hd(i) = -hd(i);     
             next_y = y(i-1) + (opts.speed * sin(hd(i)) * dt); 
         end
@@ -159,16 +190,24 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
     trajectory.hd = hd;
     
 %%%%%%%%%%%%%%%% Generate place cells
+% Place cells are modeled as two-dimensional Gaussian tuning curves.
+% The spatial firing rate at any given coordinate is determined by the squared
+% Euclidean distance to the pre-defined place field center, scaled by the
+% field width and maximum firing rate. For cells with multiple fields,
+% these individual Gaussian components are summed. The resulting continuous
+% spatial probability map is then used to generate discrete action potentials
+% via an inhomogeneous Poisson process tied to the agent's trajectory.
     % Using struct arrays to hold N cells of each type
     cells.PC = struct('t', {}, 'x', {}, 'y', {}, 'params', {});
     cells.Grid = struct('t', {}, 'x', {}, 'y', {}, 'params', {});
     cells.HD = struct('t', {}, 'x', {}, 'y', {}, 'hd', {}, 'params', {});
-    
+    cells.Noise = struct('t', {}, 'x', {}, 'y', {}, 'params', {});
+
     % place cells
     for i = 1:nhpc
         % random parameters
         num_fields = randi(opts.hpc_fields); % min or max fields
-        centers = rand(num_fields, 2) * boxSize;
+        centers = rand(num_fields, 2) .* boxSize;
         width = opts.hpc_widths(1) + rand() * range(opts.hpc_widths); 
         max_rate = 10 + rand() * 20;      % 10 to 30 Hz
         
@@ -180,9 +219,19 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
         end
         rate = (rate / max(rate)) * max_rate;
         
+        % Apply overdispersion
+        if opts.overdispersion > 0
+            rate = apply_overdispersion(rate,t,opts);
+        end
+
+        % Apply background noise
+        if opts.noise_level > 0
+            rate = apply_noise(rate,dt,opts);
+        end
+
         % poisson spikes
         spikes = rand(1, N) < (rate * dt);
-        
+
         % store
         cells.PC(i).t = t(spikes); 
         cells.PC(i).x = x(spikes); 
@@ -191,6 +240,14 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
     end
     
 %%%%%%%%%%%%%%%% Generate grid cells
+% Grid cells are generated using a spatial oscillatory interference model.
+% The base firing rate map is calculated as the sum of three two-dimensional
+% cosine gratings oriented exactly 60 degrees apart, which mathematically
+% produces a repeating hexagonal lattice of firing nodes. The resulting
+% interference pattern is exponentiated to sharpen the peaks of the firing
+% fields relative to the background. Finally, the amplitude is scaled to the
+% desired maximum firing rate before discrete spikes are drawn using an
+% inhomogeneous Poisson process.
     for i = 1:ngrid
         % random parameters
         spacing = opts.grid_spacing(1) + rand() * range(opts.grid_spacing);
@@ -209,9 +266,19 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
         rate = exp(rate); % Sharpen fields
         rate = (rate / max(rate)) * max_rate;
         
+        % Apply overdispersion
+        if opts.overdispersion > 0
+            rate = apply_overdispersion(rate,t,opts);
+        end
+
+        % Apply background noise
+        if opts.noise_level > 0
+            rate = apply_noise(rate,dt,opts);
+        end
+
         % poisson spikes
         spikes = rand(1, N) < (rate * dt);
-        
+
         % store
         cells.Grid(i).t = t(spikes); 
         cells.Grid(i).x = x(spikes); 
@@ -220,6 +287,14 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
     end
     
 %%%%%%%%%%%%%%%% Generate HD cells
+% Head direction cells are modeled using a von Mises distribution, which
+% serves as a circular analogue to the standard normal distribution.
+% The instantaneous firing rate is determined by the cosine of the difference
+% between the animal's current heading and the cell's assigned preferred
+% firing direction. This value is scaled by a concentration parameter (kappa)
+% that strictly dictates the angular width of the tuning curve. The continuous
+% directional tuning curve is then converted to a discrete spike train via
+% an inhomogeneous Poisson process.
     for i = 1:nhd
         % random parameters
         pref_dir = -pi + rand() * 2*pi;   % Anywhere from -pi to pi
@@ -230,9 +305,19 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
         rate = exp(kappa * cos(hd - pref_dir));
         rate = (rate / max(rate)) * max_rate;
         
+        % Apply overdispersion
+        if opts.overdispersion > 0
+            rate = apply_overdispersion(rate,t,opts);
+        end
+
+        % Apply background noise
+        if opts.noise_level > 0
+            rate = apply_noise(rate,dt,opts);
+        end
+
         % poisson spikes
         spikes = rand(1, N) < (rate * dt);
-        
+
         % store
         cells.HD(i).t = t(spikes); 
         cells.HD(i).x = x(spikes); 
@@ -241,34 +326,189 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,opts)
         cells.HD(i).params = struct('pref_dir', pref_dir, 'kappa', kappa, 'max_rate', max_rate);
     end
     
-%%%%%%%%%%%%%%%% Optional plotting
-    if opts.plot
-        figure('Position', [100, 100, 1000, 300], 'Color', 'w');
+%%%%%%%%%%%%%%%% Generate Noise cells
+% Noise cells are simulated as non-spatial neurons that lack any genuine
+% relationship to the environment or the animal's movements. They are initially
+% assigned a constant baseline firing rate. To realistically simulate burst-like
+% firing behavior or overdispersion, this baseline rate is multiplicatively
+% modulated by a low-frequency sinusoidal wave with a randomized starting phase.
+% This temporal modulation creates distinct clusters of spikes that occur
+% independently of the animal's spatial location, providing a rigorous false
+% positive test case for spatial detection algorithms.
+    for i = 1:nnoise
+        % random parameters
+        base_rate = 1 + rand() * 10; % 1 to 11 Hz
+        rate = ones(1, N) * base_rate;
         
-        if nhpc > 0
-            ax1 = subplot(1, 3, 1);
-            plot(ax1, x, y, 'Color', [0.8 0.8 0.8]); hold(ax1, 'on');
-            scatter(ax1, cells.PC(1).x, cells.PC(1).y, 10, 'r', 'filled');
-            axis(ax1, 'square'); 
-            title(ax1, 'Place Cell 1');
+        % Apply overdispersion to create temporal bursting (clumpy firing)
+        if opts.overdispersion > 0
+            rate = apply_overdispersion(rate,t,opts);
         end
         
+        % Apply background noise
+        if opts.noise_level > 0
+            rate = apply_noise(rate,dt,opts);
+        end
+
+        % poisson spikes
+        spikes = rand(1, N) < (rate * dt);
+        
+        % store
+        cells.Noise(i).t = t(spikes); 
+        cells.Noise(i).x = x(spikes); 
+        cells.Noise(i).y = y(spikes);
+        cells.Noise(i).params = struct('base_rate', base_rate);
+    end
+
+%%%%%%%%%%%%%%%% Optional plotting
+    if opts.plot
+        figure('Position', [100, 100, 1200, 900], 'Color', 'w');
+        tiledlayout('flow','TileSpacing','tight')
+        traj_color = [0 0 0];
+        sigma_cm = 5; % Gaussian smoothing bandwidth in centimeters (adjust as needed)
+        spike_size = 25;
+
+        if nhpc > 0
+            nexttile
+            ax = gca;
+            plot(ax, x, y, 'Color', traj_color); 
+            hold(ax, 'on');
+
+            sx = cells.PC(1).x;
+            sy = cells.PC(1).y;
+            if length(sx) > 1
+                % Compute pairwise squared Euclidean distances between all spikes
+                D_sq = pdist2([sx(:), sy(:)], [sx(:), sy(:)]).^2;
+                % Gaussian kernel density evaluated at each spike location
+                spike_density = sum(exp(-D_sq / (2 * sigma_cm^2)), 2);
+            else
+                spike_density = 1;
+            end
+
+            scatter(ax, sx, sy, spike_size, spike_density, 'filled');
+            axis(ax, 'equal'); 
+            title(ax, sprintf('Place Cell 1 (Gaussian Density)\noverdispersion = %.2f\nnoise = %.2f',opts.overdispersion,opts.noise_level));
+            colormap(ax, jet);
+            colorbar(ax);
+            axis off
+        end
+
+
+        % % if nhpc > 0
+        % %     for pp = 1:nhpc
+        % %         nexttile
+        % %         ax = gca;
+        % %         plot(ax, x, y, 'Color', traj_color); 
+        % %         hold(ax, 'on');
+        % % 
+        % %         sx = cells.PC(pp).x;
+        % %         sy = cells.PC(pp).y;
+        % %         if length(sx) > 1
+        % %             % Compute pairwise squared Euclidean distances between all spikes
+        % %             D_sq = pdist2([sx(:), sy(:)], [sx(:), sy(:)]).^2;
+        % %             % Gaussian kernel density evaluated at each spike location
+        % %             spike_density = sum(exp(-D_sq / (2 * sigma_cm^2)), 2);
+        % %         else
+        % %             spike_density = 1;
+        % %         end
+        % % 
+        % %         scatter(ax, sx, sy, spike_size, spike_density, 'filled');
+        % %         axis(ax, 'equal'); 
+        % %         title(ax, sprintf('Place Cell %d (Gaussian Density)\noverdispersion = %.2f\nnoise = %.2f',pp,opts.overdispersion,opts.noise_level));
+        % %         colormap(ax, jet);
+        % %         colorbar(ax);
+        % %         axis off
+        % %     end
+        % % end
+
+
+
+
+
+        
         if ngrid > 0
-            ax2 = subplot(1, 3, 2);
-            plot(ax2, x, y, 'Color', [0.8 0.8 0.8]); hold(ax2, 'on');
-            scatter(ax2, cells.Grid(1).x, cells.Grid(1).y, 10, 'r', 'filled');
-            axis(ax2, 'square'); 
-            title(ax2, sprintf('Grid Cell 1 (Spacing: %.0f)', cells.Grid(1).params.spacing));
+            nexttile
+            ax = gca;
+            plot(ax, x, y, 'Color', traj_color); 
+            hold(ax, 'on');
+            
+            sx = cells.Grid(1).x;
+            sy = cells.Grid(1).y;
+            if length(sx) > 1
+                D_sq = pdist2([sx(:), sy(:)], [sx(:), sy(:)]).^2;
+                spike_density = sum(exp(-D_sq / (2 * sigma_cm^2)), 2);
+            else
+                spike_density = 1;
+            end
+            
+            scatter(ax, sx, sy, spike_size, spike_density, 'filled');
+            axis(ax, 'equal'); 
+            title(ax, sprintf('Grid Cell 1 (Spacing: %.0f)\noverdispersion = %.2f\nnoise = %.2f',cells.Grid(1).params.spacing,opts.overdispersion,opts.noise_level));
+            colormap(ax, jet);
+            colorbar(ax);
+            axis off
         end
         
         if nhd > 0
-            subplot(1, 3, 3);
+            nexttile
+            % subplot(1, 3, 3);
             edges = linspace(-pi, pi, 30);
             occupancy = histcounts(hd, edges) * dt;
             spike_counts = histcounts(cells.HD(1).hd, edges);
             tuning = spike_counts ./ (occupancy + 0.001);
             centers = edges(1:end-1) + diff(edges)/2;
-            polarplot(centers, tuning, 'LineWidth', 2, 'Color', 'b');
-            title('HD Cell 1');
+            tuning = [tuning, tuning(1)];
+            centers = [centers, centers(1)];            
+            polarplot(centers, tuning, 'LineWidth', 2, 'Color', 'k');
+            ax = gca;
+            title(ax, sprintf('HD Cell 1 (PFD %.1f)\noverdispersion = %.2f\nnoise = %.2f',rad2deg(cells.HD(1).params.pref_dir),opts.overdispersion,opts.noise_level));
         end
+
+        if nnoise > 0
+            nexttile
+            ax = gca;
+            plot(ax, x, y, 'Color', traj_color); 
+            hold(ax, 'on');
+            
+            sx = cells.Noise(1).x;
+            sy = cells.Noise(1).y;
+            if length(sx) > 1
+                % Compute pairwise squared Euclidean distances between all spikes
+                D_sq = pdist2([sx(:), sy(:)], [sx(:), sy(:)]).^2;
+                % Gaussian kernel density evaluated at each spike location
+                spike_density = sum(exp(-D_sq / (2 * sigma_cm^2)), 2);
+            else
+                spike_density = 1;
+            end
+            
+            scatter(ax, sx, sy, spike_size, spike_density, 'filled');
+            axis(ax, 'equal'); 
+            title(ax, sprintf('Noise Cell 1 (random overdispersed)\noverdispersion = %.2f\nnoise = %.2f',opts.overdispersion,opts.noise_level));
+            colormap(ax, jet);
+            colorbar(ax);
+            axis off
+        end
+
     end
+end
+
+%%%%%%%%%%%%%%%% Sub functions
+% Overdispersion
+function rate = apply_overdispersion(rate,t,opts)
+    % 1.5 Hz sine wave with a random starting phase for each cell
+    od_phase = rand() * 2 * pi;
+    od_signal = 1 + opts.overdispersion * sin(2 * pi * 1.5 * t + od_phase);
+    rate = rate .* od_signal;
+end
+
+% Noise
+function rate = apply_noise(rate,dt,opts)
+    expected_signal_spikes = sum(rate * dt);
+    expected_noise_spikes = expected_signal_spikes * opts.noise_level;
+    baseline_rate = expected_noise_spikes / opts.duration;
+    rate = rate + baseline_rate;
+end
+
+
+
+
