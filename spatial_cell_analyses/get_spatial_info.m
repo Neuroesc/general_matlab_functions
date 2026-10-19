@@ -198,6 +198,11 @@ function m = get_spatial_info(dmap,rmap,opts)
     p = p + eps; % add smallest possible amount to avoid log of 0
     q = q + eps;
 
+    % if the ratemap or dwellmap are empty, skip all analyses
+    if ~any(rmap,"all") || ~any(dmap,"all")
+        opts.metrics = '';
+    end
+
 %%%%%%%%%%%%%%%% Skaggs spatial information content (bits per second)
 % Skaggs et al. (1996) Theta Phase Precession in Hippocampal Neuronal Populations and the Compression of Temporal Sequences
 % https://onlinelibrary.wiley.com/doi/epdf/10.1002/%28SICI%291098-1063%281996%296%3A2%3C149%3A%3AAID-HIPO6%3E3.0.CO%3B2-K
