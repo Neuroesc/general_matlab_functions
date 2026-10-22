@@ -9,6 +9,7 @@ Small (usually) codes that are generally helpful in lots of different places.
 
 ### 2. Helper functions (licensed)
 Small (usually) codes that are helpful and were written by external authors.
+Also probably a good idea to clone the [circular statistics toolbox](https://github.com/circstat/circstat-matlab).
 
 ### 3. Plotting functions
 Code that is generally useful for plotting and visualisation.
