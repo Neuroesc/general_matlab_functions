@@ -334,7 +334,7 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
 
         if any( ismember(opts.scores,{'spatial','grid'}) )
             % bootstrapped firing rate map          
-            [rmap_now,dmap_now,~,~,speedlift] = rate_mapper(pos.*10,spk_now.*10,rmset,speedlift);
+            [rmap_now,dmap_now,~,~,speedlift] = rate_mapper(pos,spk_now,rmset,speedlift);
         end
         
         % spatial metrics
@@ -428,8 +428,8 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
     zScores_obs = NaN(size(obsVals));
     pValues_Right_obs = NaN(size(obsVals));
     pValues_Left_obs = NaN(size(obsVals));
-    shuf95th = NaN(size(obsVals));
-    shuf5th = NaN(size(obsVals));
+    shuf95th_obs = NaN(size(obsVals));
+    shuf5th_obs = NaN(size(obsVals));
     
     if ~isempty(regShufMatrix)
         numRegShuffles = size(regShufMatrix, 1);
@@ -443,15 +443,17 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
         pValues_Right_obs(nan_cols_obs) = NaN;
         pValues_Left_obs(nan_cols_obs) = NaN;
         
-        shuf95th = prctile(regShufMatrix, 95, 1);
-        shuf5th = prctile(regShufMatrix, 5, 1);
+        shuf95th_obs = prctile(regShufMatrix, 95, 1);
+        shuf5th_obs = prctile(regShufMatrix, 5, 1);
     end
 
     % Bootstrapped values vs Resampled Shuffle
     zScores = NaN(size(bootMean));
     pValues_Right = NaN(size(bootMean));
     pValues_Left = NaN(size(bootMean));
-    
+    shuf95th = NaN(size(bootMean));
+    shuf5th = NaN(size(bootMean));
+
     if ~isempty(bootShufMatrix)
         numBootShuffles = size(bootShufMatrix, 1);
         zScores = (bootMean - mean(bootShufMatrix, 1, 'omitnan')) ./ std(bootShufMatrix, 0, 1, 'omitnan'); 
@@ -463,12 +465,17 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
         nan_cols_boot = all(isnan(bootShufMatrix), 1);
         pValues_Right(nan_cols_boot) = NaN;
         pValues_Left(nan_cols_boot) = NaN;
+
+        shuf95th = prctile(bootShufMatrix, 95, 1);
+        shuf5th = prctile(bootShufMatrix, 5, 1);        
     end
 
     % Compile everything into summary table
-    res = table(obsVals', bootMean', bootMedian', bootCI_low', bootCI_hi', zScores', pValues_Right', shuf95th', pValues_Left', shuf5th', zScores_obs', pValues_Right_obs', pValues_Left_obs',...
-                         'VariableNames', {'Observed', 'Boot_mean', 'Boot_median', 'Boot_CI_lower','Boot_CI_upper', 'z_score', 'p_value(right)', 'shuffle_95th_prctile','p_value(left)', 'shuffle_5th_prctile', 'z_score_obs', 'p_value(right)_obs','p_value(left)_obs'}, ...
-                         'RowNames', metricNames);
+    res = table(obsVals', zScores_obs', pValues_Right_obs', shuf95th_obs', pValues_Left_obs', shuf5th_obs', ...
+        bootMean', bootMedian', bootCI_low', bootCI_hi', zScores', pValues_Right', shuf95th', pValues_Left', shuf5th', ...
+        'VariableNames', {'Observed', 'z_score_obs', 'p_value(right)_obs', 'shuffle_95th_prctile_obs','p_value(left)_obs', 'shuffle_5th_prctile_obs' ...
+        'Boot_mean', 'Boot_median', 'Boot_CI_lower','Boot_CI_upper', 'z_score', 'p_value(right)', 'shuffle_95th_prctile','p_value(left)', 'shuffle_5th_prctile'}, ...
+        'RowNames', metricNames);
 
 end
 

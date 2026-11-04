@@ -188,6 +188,8 @@ function [trajectory,cells] = get_synth_neurons(nhpc,ngrid,nhd,nnoise,opts)
     trajectory.x = x; 
     trajectory.y = y; 
     trajectory.hd = hd;
+    trajectory.epoly = [0 0; 0 boxSize(2); boxSize(1) boxSize(2); boxSize(1) 0; 0 0];
+    trajectory.srate = opts.fs;
     
 %%%%%%%%%%%%%%%% Generate place cells
 % Place cells are modeled as two-dimensional Gaussian tuning curves.
