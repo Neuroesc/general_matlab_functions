@@ -348,7 +348,7 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
         g = NaN;
         if any( ismember(opts.scores,{'grid'}) )
             automap_boot = ndautoCORR(rmap_now,rmap_now,50);
-            g = get_grid_score(automap_boot,rmset.binsize/10,'method',opts.grid_type); 
+            g = get_grid_score(automap_boot,rmset.binsize,'method',opts.grid_type); 
         end
 
         % head direction
@@ -388,7 +388,15 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
         % Compute ANOVA F-statistic
         f_stat = NaN;
         if any(ismember(opts.scores, {'anova'}))
-            f_stat = compute_anova_fstat(sindx, bin_idx, total_bins, n_trials, trial_bounds, dwell_trials);
+            [f_stat, df_B, df_W] = compute_anova_fstat(sindx, bin_idx, total_bins, n_trials, trial_bounds, dwell_trials);
+        
+            if ~isnan(f_stat)
+                % Calculate the critical F-value for alpha = 0.05
+                f_crit_05 = finv(0.95, df_B, df_W);
+
+                % Calculate the exact parametric p-value
+                f_p_param = 1 - fcdf(f_stat, df_B, df_W);
+            end        
         end
 
         % convert to a table
@@ -400,7 +408,7 @@ function [res,dat] = get_spatial_bootshuff(pox,poy,pot,rmset,opts)
         a_t = array2table(ahv,"VariableNames",{'AHV_left','AHV_right','AHV_si_sec','AHV_si_spike'}); 
         s_t = array2table(sscore,"VariableNames",{'speed_score','speed_si_sec','speed_si_spike'}); 
         b_t = array2table(b,"VariableNames",{'BVC_MRL','BVC_si_sec','BVC_si_spike','EBC_MRL','EBC_si_sec','EBC_si_spike'}); 
-        f_t = array2table(f_stat,"VariableNames",{'ANOVA_F'});   
+        f_t = array2table([f_stat f_p_param],"VariableNames",{'ANOVA_F','ANOVA_p'});   
 
         dat = [dat; i_t m_t, g_t, h_t, md_t, a_t, s_t, b_t, f_t];
     end
@@ -521,8 +529,7 @@ function [dwell_trials, bin_idx, total_bins] = setup_anova_bins(pox, poy, rmset,
 end
 
 %%%%%%%%%%%%%%%% compute_anova_fstat
-function [f_stat] = compute_anova_fstat(sindx, bin_idx, total_bins, n_trials, trial_bounds, dwell_trials)
-    % Aggregate spike counts per trial
+function [f_stat, df_B, df_W] = compute_anova_fstat(sindx, bin_idx, total_bins, n_trials, trial_bounds, dwell_trials)    % Aggregate spike counts per trial
     spike_trials = zeros(n_trials, total_bins);
     for k = 1:n_trials
         A_k = trial_bounds(k, 1);
@@ -540,6 +547,8 @@ function [f_stat] = compute_anova_fstat(sindx, bin_idx, total_bins, n_trials, tr
     
     % Calculate sum of squares and F-statistic
     f_stat = NaN;
+    df_B = NaN; 
+    df_W = NaN;
     rate_trials = spike_trials ./ dwell_trials;
     valid_rates = ~isnan(rate_trials);
     n_j = sum(valid_rates, 1); 

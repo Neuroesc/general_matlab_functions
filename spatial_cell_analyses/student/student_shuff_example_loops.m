@@ -106,6 +106,7 @@ z_thresh = 1.645;
 
 % identify false negatives (failed to reach significance)
 is_false_neg = pc_data.si_z_shuffle < z_thresh;
+% is_false_neg = pc_data.si_observed < 0.25;
 
 % preallocate the heatmap matrix
 fn_rate_matrix = NaN(length(overdispersions), length(noise_levels));
