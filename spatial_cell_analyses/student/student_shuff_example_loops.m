@@ -75,7 +75,8 @@ for n_idx = 1:length(noise_levels)
                 % enter data into our table
                 res_si_row = find(ismember(res.Properties.RowNames,'XY_si_spike'));
                 res_F_row = find(ismember(res.Properties.RowNames,'ANOVA_F'));
-    
+                res_Fp_row = find(ismember(res.Properties.RowNames,'ANOVA_p'));
+
                 results.noise(row_counter,1) = current_noise;
                 results.overdispersion(row_counter,1) = current_od;
                 results.cell_type(row_counter,1) = cc; % 1 for place, 2 for noise cells
@@ -85,6 +86,7 @@ for n_idx = 1:length(noise_levels)
                 results.si_z_shuffle(row_counter,1) = res.z_score_obs(res_si_row); % observed value z-scored relative to a shuffle
                 results.si_z_bootshuff(row_counter,1) = res.z_score(res_si_row); % bootstrapped valye z-scored relative to a shuffle
                 results.F_observed(row_counter,1) = res.Observed(res_F_row);
+                results.Fp_observed(row_counter,1) = res.Observed(res_Fp_row);
                 results.F_bootstrapped(row_counter,1) = res.Boot_mean(res_F_row);
                 results.F_z_shuffle(row_counter,1) = res.z_score_obs(res_F_row);
                 results.F_z_bootshuff(row_counter,1) = res.z_score(res_F_row);
