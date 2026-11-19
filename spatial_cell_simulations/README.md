@@ -1,10 +1,89 @@
 <img width="303" height="102" alt="neuroesc_long" src="https://github.com/user-attachments/assets/e185a933-e27d-4436-ab1f-52a4fe389e38" />
 
-# Spatial cell analysis (Matlab)
-A collection of MATLAB functions for simulating and analyzing the firing properties of spatially modulated neurons, including place cells, grid cells, and head direction (HD) cells. This toolkit provides robust methods for generating synthetic data, computing spatial and directional rate maps, extracting information-theoretic metrics, and performing statistical validation via bootstrapping and shuffling.
+# Spatial cell simulations (Matlab)
+A collection of MATLAB functions for simulating the firing properties of spatially modulated neurons, including place cells, grid cells, and head direction (HD) cells. This toolkit provides robust methods for generating synthetic data.
 
 ## Included Functions
-### 1. Synthetic Data Generation
+### 1. Random Walk Generation
+* **`gen_random_walk.m`**
+    Simulates realistic animal exploratory trajectories inside arbitrary 2D geometries—from open fields to complex, multi-compartment mazes with walls and narrow doorways. Operating on a binary environment matrix (emap), it uses geodesic distance transforms and a weighted decision matrix to generate smooth, obstacle-aware movement paths. Key features:
+1. Obstacle & doorway navigation: uses geodesic pathfinding (bwdistgeodesic) to select reachable macro-steps and interpolate collision-free paths around barriers and through narrow openings, this allows modelling complex geometries with small doorways.
+2. Novelty-driven coverage: tracks recent spatial occupancy over a configurable memory window (novelty_min), biasing the agent away from recently visited areas to promote thorough exploration.
+3. Tunable behavioral biases: combines seven weighted parameters—step distance, directional persistence (von Mises angular distribution), novelty, wall repulsion, central attraction, and custom repulsor/attractor maps—to shape movement dynamics.
+4. Tracking-ready output: interpolates macro-steps to 50 Hz with optional positional jitter and smoothing (smoothn), returning an array of timestamps, smoothed/raw coordinates, head direction (degrees), and running speed (cm/s). 
+<img width="1000" alt="image" src="https://github.com/user-attachments/assets/500bd7ba-0fa9-4315-9c5f-0ae731665222" />
+
+<details>
+  <summary>Click to view the code example</summary>
+
+  ```matlab
+% Open square
+emap_square = false(122, 122);
+emap_square(2:end-1, 2:end-1) = true;
+
+% Square with dividing wall
+emap_doorway = emap_square;
+emap_doorway(:, 60:63) = false;      % 4 cm thick vertical dividing wall
+emap_doorway(56:67, 60:63) = true;   % 12 cm doorway through the center
+
+% Figure-8 maze
+emap_fig8 = false(122, 122);
+w = 14; % Corridor width in cm
+mid = 61;
+emap_fig8(2:(1+w), 2:end-1)             = true; % Top corridor
+emap_fig8((end-w):end-1, 2:end-1)       = true; % Bottom corridor
+emap_fig8(2:end-1, 2:(1+w))             = true; % Left corridor
+emap_fig8(2:end-1, (end-w):end-1)       = true; % Right corridor
+emap_fig8(2:end-1, (mid-w/2):(mid+w/2-1)) = true; % Central vertical stem
+
+% Two connected rooms
+emap_tworoom = false(82, 162);
+emap_tworoom(2:81, 2:61)     = true; % Left room
+emap_tworoom(2:81, 102:161)  = true; % Right room
+emap_tworoom(35:48, 62:101)  = true; % 40 cm long, 14 cm wide corridor
+
+% Get walk and plot
+walk_mins = 10;
+envs = {
+    struct('name', 'Open Square',          'emap', emap_square,  'smoo', 10, 'center_pull', 100)
+    struct('name', 'Divided Square (Door)', 'emap', emap_doorway, 'smoo', 4,  'center_pull', 0)
+    struct('name', 'Figure-8 Corridors',   'emap', emap_fig8,    'smoo', 3,  'center_pull', 0)
+    struct('name', 'Two Rooms + Corridor', 'emap', emap_tworoom, 'smoo', 4,  'center_pull', 0)
+    };
+
+f = figure('Name', 'Random Walk Geometries', 'Position', [100, 100, 1200, 900], 'Color', 'w');
+tiledlayout(1, 4, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+for i = 1:numel(envs)
+    e = envs{i};
+    disp(sprintf('\nSimulating %s', e.name));
+
+    % Run random_walk (disable central attraction in multi-compartment mazes)
+    [pos, ~] = gen_random_walk('emap', e.emap, ...
+        'walk_length', walk_mins, ...
+        'central_attraction', e.center_pull, ...
+        'smoo', e.smoo, ...
+        'novelty_min', 4);
+
+    % Plot environment mask and trajectory
+    % pos columns: [time, x_smooth, y_smooth, hd_deg, speed, x_raw, y_raw]
+    nexttile;
+    imagesc(e.emap);
+    colormap(gca, [0.18 0.18 0.18; 0.98 0.98 0.98]); % Dark grey walls, white floor
+    hold on;
+
+    plot(pos(:, 2), pos(:, 3), 'Color', [0.05 0.45 0.85, 0.75], 'LineWidth', 1.1);
+    plot(pos(1, 2), pos(1, 3), 'go', 'MarkerFaceColor', 'g', 'MarkerSize', 7);   % Start
+    plot(pos(end, 2), pos(end, 3), 'rs', 'MarkerFaceColor', 'r', 'MarkerSize', 7); % End
+
+    axis xy equal tight;
+    set(gca, 'XTick', [], 'YTick', [], 'Box', 'on');
+    title(sprintf('%s (%d min)', e.name, walk_mins), 'FontSize', 12, 'FontWeight', 'bold');
+end
+```
+</details>
+
+### 2. Synthetic Data Generation
 * **`get_synth_neurons.m`**
   Generates a realistic correlated random walk trajectory for a virtual animal in a square arena. It also simulates synthetic spike trains for place cells, grid cells (using an interference model), and head direction Cells (using Von Mises tuning) via an inhomogeneous Poisson process. This is useful for unit-testing downstream analysis pipelines. It is a basic spatial simulation and does not model things like speed modulation, theta modulation or phase-precession.
 <img width="1000" alt="image" src="https://github.com/user-attachments/assets/e77f169b-b887-4ba5-b055-3fc0af0ce24d" />
@@ -50,51 +129,8 @@ end
 ```
 </details>
 
-### 2. Rate Map Generation
-* **`rate_mapper_hd.m`**
-  Computes 1D directional firing rate and dwell time maps. It supports both standard boxcar-smoothed histogram methods and Kernel Spatial Density Estimation (KSDE) to map spike and position data into the head direction domain. See also [rate_mapper](https://github.com/Neuroesc/rate_mapper) for the 2D spatial equivalent.
-
-### 3. Spatial & Directional Metrics
-* **`get_spatial_info.m`**
-  Calculates classic spatial information theoretic measures from 1D, 2D, or 3D rate maps. Output metrics include Skaggs spatial information content (bits/sec and bits/spike), sparsity, Shannon's entropy, Mutual Information, and Kullback–Leibler divergence.
-* **`get_directional_info.m`**
-  Calculates standard head direction statistics from directional rate maps. Outputs include the Rayleigh mean resultant vector length, the preferred firing direction (PFD), circular mean, and circular standard deviation.
-* **`get_grid_score.m`**
-  Calculates grid score from 2D rate maps. Outputs include the grid score (based on a number of published methods), grid spacing and orientation. Also includes quantification of 'average field' values based on the central peak of the autocorrelogram, such as average field radius.
-* **`ndautoCORR.m`**
-  Calculates autocorrelogram, which is used to calculate grid score. This function has been adapted to work on three-dimensional firing rate maps.
-  
-### 4. Statistical Validation
-* **`get_spatial_bootshuff.m`**
-  Computes spatial, grid, and directional metrics for a single cell by generating a bootstrapped "observed" value (via spike resampling with replacement) to control for unstable activity. It then computes exact non-parametric p-values (and parametric z-scores) by comparing the bootstrapped value against a null distribution generated via circular time-shifting of the spike train. This is based on the Method described by [Savelli et al. (2017)](https://elifesciences.org/articles/21354), with some improvements.
-
-<img width="1000" alt="image" src="https://github.com/user-attachments/assets/e4f7167f-023a-4532-a96c-260ff6aee113" />
-
-<details>
-  <summary>Click to view the code example</summary>
-
-  ```matlab
-% get synthetic data
-[trajectory,cells] = get_synth_neurons(1,1,1,"hpc_widths",[2 8]);
-
-% settings for map generation
-rmset.ppm = 100;
-rmset.method = 'histogram';
-rmset.binsize = 25;
-rmset.ssigma = 30;
-rmset.hd_type = 'histogram';
-rmset.hd_bins = 60;
-rmset.hd_boxcar = 3;
-
-% bootstrap vs shuffle
-res = get_spatial_bootshuff(trajectory.x(:),trajectory.y(:),trajectory.t(:),rmset,'spt',cells.PC(1).t,'poh',trajectory.hd(:),'scores',{'all'});
-disp(res)
-```
-</details>
-
 ## Requirements
-* **[Circular Statistics Toolbox](https://uk.mathworks.com/matlabcentral/fileexchange/10676-circular-statistics-toolbox-directional-statistics)** (Required for `get_directional_info.m` to compute circular standard deviation, means, and Rayleigh vectors).
-* **[rate_mapper](https://github.com/Neuroesc/rate_mapper)** (Required for `get_spatial_info.m` to generate firing rate maps).
+
 
 ## Basic Usage
 Most functions are designed with an `arguments` block and support Name-Value pairs for flexible processing. Detailed usage instructions, expected inputs, and outputs can be found in the documentation block at the top of each file. 
