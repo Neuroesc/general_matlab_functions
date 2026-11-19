@@ -1,63 +1,125 @@
-function [pos, config] = gen_random_walk(opts)
-% random_walk Generates a random walk within an arbitrary boundary matrix
+function trajectory = gen_random_walk(opts)
+% gen_random_walk Generates a random walk within an arbitrary boundary matrix
 %
-% This function models the natural exploratory trajectory of an animal navigating 
-% through simple or complex environments. It utilizes geodesic distances and 
-% weighted decision matrices to route the agent around obstacles, through doorways, 
-% and away from recently visited areas (novelty preference). 
+% Models the exploratory trajectory of an animal navigating through simple or
+% complex 2D environments. Uses geodesic distance transforms and a weighted
+% decision matrix to route the agent around obstacles, through doorways, and
+% away from recently visited areas (novelty preference).
 %
 % USAGE
 %
-% [pos, config] = random_walk()
-% [pos, config] = random_walk('emap', my_logical_matrix, 'walk_length', 10)
+% trajectory = gen_random_walk()
+% trajectory = gen_random_walk(Name, Value)
 %
 % INPUT
 %
-% 'opts' - (Name-Value) Structure or arguments to define the walk configuration.
-%   .emap               - (Logical) Matrix where true=walkable space, false=walls.
-%   .walk_length        - (Double) Duration of the walk in minutes.
-%   .steps_per_min      - (Double) Number of macro-decisions the agent makes per minute.
-%   .decision_weights   - (1x7 Double) Weighting for [step_dist, angle, novelty, 
-%                         wall_repulsion, central_attraction, repulsors, attractors].
-%   .novelty_min        - (Double) Memory window in minutes for occupancy avoidance.
+% 'opts' - (Name-Value) Optional configuration parameters:
+%   .emap               - (Logical matrix) Binary environment mask where true = walkable
+%                         space and false = walls/obstacles.
+%                         Default: 128x128 square (126x126 interior padded with 1-pixel wall).
+%   .repulsor_map       - (Logical matrix) Mask of repulsor locations (same size as emap).
+%                         Default: empty.
+%   .attractor_map      - (Logical matrix) Mask of attractor locations (same size as emap).
+%                         Default: empty.
+%   .walk_length        - (Scalar double) Total duration of the walk in minutes.
+%                         Default: 20.
+%   .steps_per_min      - (Scalar double) Number of macro-decisions per minute.
+%                         Default: 64.
+%   .start_position     - (1x2 double) Initial [row, col] starting coordinates. If NaN or
+%                         located on a wall, defaults to the nearest walkable pixel to center.
+%                         Default: [NaN, NaN].
+%   .start_angle        - (Scalar double) Initial heading angle in radians. If NaN, chosen
+%                         uniformly at random from [-pi, pi].
+%                         Default: NaN.
+%   .step_dist          - (1x2 double) [mean, SD] of the Gaussian preferred macro-step
+%                         distance (in pixels/cm).
+%                         Default: [16, 8].
+%   .step_fudge         - (1x2 double) [min, max] uniform random jitter added to the
+%                         preferred step distance on each macro-step (in pixels/cm).
+%                         Default: [-8, 8].
+%   .angle_dist         - (1x2 double) [mean, kappa] of the von Mises distribution for
+%                         turning angles relative to the previous heading (radians).
+%                         Default: [0, 1].
+%   .angle_fudge        - (1x2 double) [min, max] uniform random jitter added to the
+%                         preferred turning angle on each macro-step (radians).
+%                         Default: [-1.2, 1.2].
+%   .smoo               - (Scalar double) Smoothing parameter passed to smoothn (robust).
+%                         Set to 0 to disable smoothing.
+%                         Default: 10.
+%   .jit                - (Scalar double) Amplitude of uniform positional jitter added
+%                         before smoothing to mimic tracking noise (0 to disable).
+%                         Default: 0.
+%   .central_attraction - (Scalar double) SD of Gaussian attraction toward the arena
+%                         midpoint (smaller = stronger; 0 to disable).
+%                         Default: 100.
+%   .wall_repulsion     - (Scalar double) SD of Gaussian repulsion away from walls
+%                         (smaller = stronger; 0 to disable).
+%                         Default: 100.
+%   .repulsion          - (Scalar double) SD of Gaussian repulsion from repulsor_map
+%                         (smaller = stronger; 0 to disable).
+%                         Default: 0.
+%   .attraction         - (Scalar double) SD of Gaussian attraction to attractor_map
+%                         (smaller = stronger; 0 to disable).
+%                         Default: 0.
+%   .novelty_min        - (Scalar double) Rolling memory window (minutes) used to track
+%                         recent occupancy and bias exploration toward unvisited regions.
+%                         Default: 8.
+%   .decision_weights   - (1x7 double) Weights applied to each component of the decision
+%                         matrix: [step_dist, angle, novelty, wall_repulsion,
+%                         central_attraction, repulsors, attractors].
+%                         Default: [1, 1, 1, 1, 1, 1, 1].
 %
 % OUTPUT
 %
-% 'pos'    - [N x 7] matrix of trajectory data: 
-%            [Time(s), X_smooth, Y_smooth, HD(deg), Speed, X_raw, Y_raw]
-% 'config' - (Struct) The finalized configuration options used for generation.
+% 'trajectory' - (Struct) Simulated trajectory and session metadata with fields:
+%   .t      - (Nx1 double) Timestamps in seconds.
+%   .x      - (Nx1 double) Smoothed X coordinates (emap column space, pixels/cm).
+%   .y      - (Nx1 double) Smoothed Y coordinates (emap row space, pixels/cm).
+%   .v      - (Nx1 double) Instantaneous running speed (pixels/s or cm/s).
+%   .raw_x  - (Nx1 double) Unsmoothed X coordinates prior to jitter/smoothing.
+%   .raw_y  - (Nx1 double) Unsmoothed Y coordinates prior to jitter/smoothing.
+%   .hd     - (Nx1 double) Movement heading direction in degrees [-180, 180]
+%             (NaN at first and last samples).
+%   .config - (Struct) Finalized configuration options used, including total .steps.
+%   .srate  - (Scalar double) Trajectory sampling rate in Hz (50).
 %
 % EXAMPLE
-% 
-% emap = padarray(ones(126,'logical'),[1 1],false,'both');
-% [pos, config] = gen_random_walk('emap',emap);
-% figure
-% tiledlayout('flow')
-% nexttile
-% plot(pos(:,2),pos(:,3),'k');
+%
+% emap = padarray(ones(126, 'logical'), [1 1], false, 'both');
+% traj = gen_random_walk('emap', emap);
+%
+% figure;
+% tiledlayout('flow');
+% nexttile;
+% plot(traj.x, traj.y, 'k');
 % daspect([1 1 1]);
-% title('Square')
-% 
-% nexttile
-% emap = padarray(ones(126,'logical'),[1 1],false,'both');
-% emap(60,1:60) = false;
-% emap(60,65:end) = false;
-% [pos, config] = gen_random_walk('emap',emap);
-% plot(pos(:,2),pos(:,3),'k');
+% title('Square');
+%
+% nexttile;
+% emap_door = padarray(ones(126, 'logical'), [1 1], false, 'both');
+% emap_door(60, 1:60) = false;
+% emap_door(60, 65:end) = false;
+% traj_door = gen_random_walk('emap', emap_door);
+% plot(traj_door.x, traj_door.y, 'k');
 % daspect([1 1 1]);
-% title('Narrow doorway')
+% title('Narrow doorway');
 %
 % NOTES
-% 1. Uses a 50Hz interpolation between macro-steps for high-resolution tracking.
-% 2. X and Y coordinates map directly to the columns and rows of the input emap.
+% 1. Macro-steps are interpolated along shortest geodesic paths at 50 Hz.
+% 2. X and Y coordinates map directly to columns and rows of emap (1 pixel = 1 cm).
+% 3. Requires Image Processing Toolbox (bwdist, bwdistgeodesic, bwmorph, imgaussfilt),
+%    Statistics and Machine Learning Toolbox (normpdf), and smoothn (when smoo > 0).
+%
+% SEE ALSO get_synth_neurons
 
 % HISTORY
 %
+% version 2.2.0, Release 19/11/26 Renamed to gen_random_walk; switched output to trajectory struct
 % version 2.1.0, Release 14/11/26 arguments block, optimized occupancy, meshgrid caching
 % version 2.0.0, Release 14/11/26 Initial release, created from random_walk
 % version 1.0.0, Release 08/10/24 random_walk created
 %
-% AUTHOR 
+% AUTHOR
 % Roddy Grieves
 % University of Glasgow, Sir James Black Building
 % Memory and Place Systems (MAPS) lab
@@ -282,7 +344,18 @@ function [pos, config] = gen_random_walk(opts)
     dist_sum = movsum(ds, wsize, 'omitnan', 'Endpoints', 'shrink'); 
     pov = dist_sum ./ (wsize * (1/sample_rate)); 
 
-    pos = [pot(:), pox(:), poy(:), poh(:), pov(:), pox0(:), poy0(:)];
+    % Save output
+    trajectory = struct;
+    trajectory.t = pot(:); 
+    trajectory.x = pox(:); 
+    trajectory.y = poy(:); 
+    trajectory.v = pov(:); 
+    trajectory.raw_x = pox0(:); 
+    trajectory.raw_y = poy0(:);     
+    trajectory.hd = poh(:); % in degrees
+    trajectory.config = config;
+    trajectory.srate = sample_rate;
+
 end
 
 % Von Mises Distribution for native angle distribution
