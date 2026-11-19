@@ -64,22 +64,21 @@ for i = 1:numel(envs)
     disp(sprintf('\nSimulating %s', e.name));
 
     % Run random_walk (disable central attraction in multi-compartment mazes)
-    [pos, ~] = gen_random_walk('emap', e.emap, ...
+    t = gen_random_walk('emap', e.emap, ...
         'walk_length', walk_mins, ...
         'central_attraction', e.center_pull, ...
         'smoo', e.smoo, ...
         'novelty_min', 4);
 
     % Plot environment mask and trajectory
-    % pos columns: [time, x_smooth, y_smooth, hd_deg, speed, x_raw, y_raw]
     nexttile;
     imagesc(e.emap);
     colormap(gca, [0.18 0.18 0.18; 0.98 0.98 0.98]); % Dark grey walls, white floor
     hold on;
 
-    plot(pos(:, 2), pos(:, 3), 'Color', [0.05 0.45 0.85, 0.75], 'LineWidth', 1.1);
-    plot(pos(1, 2), pos(1, 3), 'go', 'MarkerFaceColor', 'g', 'MarkerSize', 7);   % Start
-    plot(pos(end, 2), pos(end, 3), 'rs', 'MarkerFaceColor', 'r', 'MarkerSize', 7); % End
+    plot(t.x, t.y, 'Color', [0.05 0.45 0.85, 0.75], 'LineWidth', 1.1);
+    plot(t.x(1), t,y(1), 'go', 'MarkerFaceColor', 'g', 'MarkerSize', 7);   % Start
+    plot(t.x(end), t.y(end), 'rs', 'MarkerFaceColor', 'r', 'MarkerSize', 7); % End
 
     axis xy equal tight;
     set(gca, 'XTick', [], 'YTick', [], 'Box', 'on');
