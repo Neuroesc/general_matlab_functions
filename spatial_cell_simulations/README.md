@@ -1,9 +1,14 @@
-<img width="303" height="102" alt="neuroesc_long" src="https://github.com/user-attachments/assets/e185a933-e27d-4436-ab1f-52a4fe389e38" />
-
 # Spatial cell simulations (Matlab)
+
+<img align="right" width="200" alt="neuroesc_long" src="https://github.com/Neuroesc/neuroesc_media/blob/b40a618a7baf93d2708867638540dc52b2c2020d/Lab%20logos/MAPS/lab_logo_scene_square_lowres.png?raw=true" />
+
 A collection of MATLAB functions for simulating the firing properties of spatially modulated neurons, including place cells, grid cells, and head direction (HD) cells. This toolkit provides robust methods for generating synthetic data.
 
-## Included Functions
+- [Random Walk Generation](https://github.com/Neuroesc/general_matlab_functions/edit/main/spatial_cell_simulations/README.md#1-random-walk-generation)
+- [Synthetic Data Generation](https://github.com/Neuroesc/general_matlab_functions/edit/main/spatial_cell_simulations/README.md#2-synthetic-data-generation)
+
+<br clear="right" />
+
 ### 1. Random Walk Generation
 * **`gen_random_walk.m`**
     Simulates realistic animal exploratory trajectories inside arbitrary 2D geometries—from open fields to complex, multi-compartment mazes with walls and narrow doorways. Operating on a binary environment matrix (emap), it uses geodesic distance transforms and a weighted decision matrix to generate smooth, obstacle-aware movement paths. Key features:
