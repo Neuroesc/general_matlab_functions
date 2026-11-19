@@ -53,8 +53,9 @@ function [pos, config] = gen_random_walk(opts)
 
 % HISTORY
 %
-% version 1.1.0, Release 14/11/26 arguments block, optimized occupancy, meshgrid caching
-% version 1.0.0, Release 00/00/24 Initial release
+% version 2.1.0, Release 14/11/26 arguments block, optimized occupancy, meshgrid caching
+% version 2.0.0, Release 14/11/26 Initial release, created from random_walk
+% version 1.0.0, Release 08/10/24 random_walk created
 %
 % AUTHOR 
 % Roddy Grieves
